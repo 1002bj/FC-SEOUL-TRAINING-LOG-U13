@@ -20,7 +20,6 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 <style>
-/* CSS 스타일링 */
 :root{ --red:#E30613; --black:#1a1a1a; --gold:#C5A059; --bg:#334155; --salmon:#F5B7B1; }
 *{ box-sizing:border-box; -webkit-print-color-adjust:exact; }
 body{ margin:0; font-family:'Apple SD Gothic Neo', sans-serif; background:var(--bg); }
@@ -230,7 +229,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
 </head>
 <body>
 
-<!-- 단 1개의 로그인 스크린 -->
+<!-- 로그인 스크린 -->
 <div id="loginScreen">
   <div class="login-card">
     <div class="login-head">
@@ -241,9 +240,6 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
       <div class="cfg-box" id="backendConfigBox">
         <label>백엔드 URL 설정 (최초 1회 필수)</label>
         <input type="text" id="backendUrl" placeholder="https://script.google.com/macros/s/.../exec">
-      </div>
-      <div id="showConfigToggle" style="display:none; text-align:center; margin-bottom:10px;">
-        <span class="toggle-link" onclick="toggleConfigBoxes()">⚙ 서버 설정 보기/변경 (관리자용)</span>
       </div>
       <hr style="margin:14px 0; border:0; border-top:1px solid #eee;">
       
@@ -302,7 +298,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
   </div>
 </div>
 
-<!-- 단 1개의 메인 앱 스크린 -->
+<!-- 메인 앱 스크린 -->
 <div id="appScreen">
   <div class="topbar">
     <div class="brand">FC SEOUL <span>TRAINING LOG</span></div>
@@ -326,7 +322,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
         <div id="journalCard"></div>
       </div>
       <div id="diaryViewWrapper" style="display:none;"><div id="diaryViewCard"></div></div>
-      <div id="emptyMsg" class="empty"></div>
+      <div id="emptyMsg" class="empty">왼쪽에서 메뉴를 선택해보세요.</div>
     </div>
   </div>
 
@@ -369,7 +365,7 @@ const PALETTE = ["#F4C430","#F2994A","#EB5B2F","#E12F2F","#8B1E1E"];
 
 const avg = arr => !arr || !arr.length ? 0 : Math.round(arr.reduce((a,b)=>a+(b||0),0)/arr.length*10)/10;
 
-// 🌟 시차(Timezone) 글로벌 보정 함수
+// 시차 글로벌 보정 함수
 const formatDateLocal = isoString => {
   if (!isoString || typeof isoString !== 'string') return isoString;
   if (isoString.includes('T')) {
@@ -379,7 +375,6 @@ const formatDateLocal = isoString => {
   return isoString;
 };
 
-// 화면 입력창 디폴트 시간도 한국 시간 기준으로 추출
 const dateStr = d => {
   const offset = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - offset).toISOString().slice(0,10);
@@ -400,6 +395,7 @@ let calDate = new Date();
 let expandedAccordionDay = null;
 
 // 🌟 데이터 누락 방지 안전장치 (Safeguards)
+// 과거 일지 클릭 시 로딩만 돌고 멈추는 에러를 완벽 방지합니다.
 function applySafeguards() {
   if (!currentEntry) return;
   if (!currentEntry.type || !JOURNAL_TYPES[currentEntry.type]) {
@@ -420,7 +416,7 @@ function applySafeguards() {
   currentEntry.coachFeedback = currentEntry.coachFeedback || '';
 }
 
-// 🌟 구글 드라이브 이미지 썸네일 우회 변환 함수
+// 구글 드라이브 썸네일 변환 우회
 function getDriveImgUrl(url) {
   if (!url) return '';
   if (url.includes('drive.google.com') && url.includes('id=')) {
@@ -487,7 +483,6 @@ window.onload = () => {
     document.getElementById('backendConfigBox').style.display = 'none';
   }
   
-  // 아이디 저장 불러오기
   const savedId = localStorage.getItem('tj_saved_id');
   if(savedId) {
     const loginIdEl = document.getElementById('loginId');
@@ -516,7 +511,6 @@ function toggleForm(which){
 }
 function backendUrl(){ const v=document.getElementById('backendUrl').value.trim(); if(v) localStorage.setItem('tj_url', v); return v; }
 
-/* API Fetch + 에러 방지(Retry) 및 시차 보정 로직 결합 */
 async function api(payload, silent){
   const url = backendUrl();
   if (!url) { if(!silent) await uiAlert('백엔드 URL을 먼저 입력해주세요.', '설정 오류'); return {ok:false}; }
@@ -529,7 +523,7 @@ async function api(payload, silent){
       const data = await res.json();
       if (!silent) loading(false);
       
-      // 🌟 시차(Timezone) 보정 로직
+      // 시차 보정
       if (data.entries) {
         data.entries.forEach(e => {
           if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate);
@@ -588,7 +582,7 @@ function handleRegPhoto(e){
   });
 }
 
-/* --- 계정 관리 (로그인, 가입, 찾기) --- */
+/* --- 계정 관리 --- */
 async function doFindId() {
   const name = document.getElementById('findIdName').value.trim();
   if(!name) return uiAlert('이름을 입력해주세요.');
@@ -653,7 +647,6 @@ async function doRegister(){
   const err = document.getElementById('regError'); err.innerText = '';
   if (!id||!pw||!name) { err.innerText = '모든 항목을 입력해주세요.'; return; }
   
-  // 가입 즉시 완료 (대기 없음)
   const res = await api({ action:'register', id, pw, name, role, photo: regPhotoData });
   if (res.ok) {
     await uiAlert('회원가입 완료! 로그인해주세요.', '가입 완료');
@@ -691,6 +684,7 @@ function enterApp(){
   document.getElementById('appScreen').style.display = 'block';
   const av = document.getElementById('userAvatar');
   if (currentUser.photo) { av.src = currentUser.photo; av.style.display = 'inline-block'; } else av.style.display = 'none';
+  if (currentUser.role !== 'player' && currentUser.role !== 'coach') { showPendingScreen(); return; }
   
   document.getElementById('userLabel').innerText = `${currentUser.name} (${currentUser.role==='player'?'선수':'지도자'}${currentUser.isAdmin?' · 관리자':''})`;
   
@@ -704,6 +698,17 @@ function enterApp(){
     renderCoachSidebar(); 
     showDashboard(); 
   }
+}
+
+function showPendingScreen(){
+  document.getElementById('userLabel').innerText = `${currentUser.name} (승인 대기 중)`;
+  document.getElementById('sidebar').innerHTML = '';
+  hidePanels();
+  document.getElementById('mainArea').innerHTML = `
+    <div class="empty" style="color:white; display:block;">
+      <i class="fa fa-hourglass-half" style="font-size:28px; margin-bottom:10px; display:block;"></i>
+      관리자가 아직 승인하지 않았어요.<br>지도자님께 문의해주세요.
+    </div>`;
 }
 
 function hidePanels(){
@@ -787,13 +792,13 @@ async function onTypeChange(){
 
 async function loadArchive(){
   const el = document.getElementById('archiveList');
-  if(el) el.innerHTML = '목록을 불러오는 중...';
+  el.innerHTML = '목록을 불러오는 중...';
   const res = await api({ action:'listEntries', playerId: currentPlayerId, type: currentType });
-  if (!res.ok) { if(el) el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
-  if (!res.entries.length) { if(el) el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 일지가 없습니다.</div>'; return; }
+  if (!res.ok) { el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
+  if (!res.entries.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 일지가 없습니다.</div>'; return; }
   
   const canDel = true; 
-  if(el) el.innerHTML = res.entries.map(en => `
+  el.innerHTML = res.entries.map(en => `
     <div class="list-item">
       <span onclick="loadEntry('${en.entryId}')" style="flex:1; cursor:pointer; font-weight:bold;">
         <i class="fa fa-file-alt" style="margin-right:6px; color:#94a3b8;"></i>
@@ -842,6 +847,7 @@ async function createEntry(){
   renderJournal();
 }
 
+// 🌟 에러 완전 방지 로직을 추가하여 다이렉트 오픈을 보장합니다.
 function loadEntry(entryId){
   api({ action:'getEntry', entryId }).then(async res => {
     if (!res.ok) { await uiAlert(res.error, '오류'); return; }
@@ -849,12 +855,15 @@ function loadEntry(entryId){
     currentEntry.entryId = entryId;
     currentType = currentEntry.type || currentType;
     
-    applySafeguards(); // 🌟 데이터 누락 에러 방지
+    applySafeguards(); // 안전장치 호출!
 
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
     expandedAccordionDay = null;
     renderJournal();
+  }).catch(err => {
+    console.error(err);
+    uiAlert('일지를 불러오는 중 에러가 발생했습니다: ' + err);
   });
 }
 
@@ -1121,11 +1130,21 @@ async function renderCoachSidebar() {
 
     let adminHtml = '';
     if (currentUser.isAdmin) {
+      // 🌟 가입 승인 대기, 권한 관리 다시 부활 완료
       adminHtml = `
         <hr style="margin: 20px 0; border:0; border-top: 1px solid #cbd5e1;">
+        <h3 style="margin-top:0;">가입 승인 대기</h3><div id="pendingArea"></div>
+        <hr style="margin: 15px 0; border:0; border-top: 1px dashed #cbd5e1;">
+        <h3 style="margin-top:0;">권한 관리</h3><div id="permArea"></div>
+        <hr style="margin: 15px 0; border:0; border-top: 1px dashed #cbd5e1;">
         <h3 style="margin-top:0;">선수 계정 관리</h3><div id="playerMgmtArea"></div>
       `;
       sb.insertAdjacentHTML('beforeend', adminHtml);
+    }
+
+    if (!currentUser.granted && !currentUser.isAdmin) {
+      document.getElementById('playerPickArea').innerHTML = `<div style="font-size:12px; color:#b45309; background:#fffbeb; border:1px solid #f59e0b; padding:10px; border-radius:6px;">전체 선수 조회 권한이 없습니다.<br>관리자에게 권한 부여를 요청해주세요.</div>`;
+      return;
     }
 
     const players = res.users.filter(u => u.role === 'player');
@@ -1145,6 +1164,8 @@ async function renderCoachSidebar() {
     }
 
     if (currentUser.isAdmin) { 
+      renderPendingPanel(res.users.filter(u=>u.role!=='player' && u.role!=='coach')); 
+      renderPermPanel(res.users.filter(u=>u.role==='coach')); 
       renderPlayerMgmt(players); 
     }
 
@@ -1154,6 +1175,29 @@ async function renderCoachSidebar() {
   }
 }
 
+function renderPendingPanel(pending){
+  const el = document.getElementById('pendingArea');
+  if (!pending.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">대기 중인 가입자가 없습니다.</div>'; return; }
+  el.innerHTML = pending.map(u => `
+    <div class="perm-row"><span>${u.photo?`<img src="${u.photo}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px;">`:''}${u.name} (${u.id})</span>
+    <span style="display:flex; gap:4px;">
+      <button style="background:#0284c7" onclick="approveUser('${u.id}','player')">선수로 승인</button>
+      <button style="background:#16a34a" onclick="approveUser('${u.id}','coach')">지도자로 승인</button>
+    </span></div>`).join('');
+}
+async function approveUser(targetId, role){
+  const res = await api({ action:'setRole', adminId: currentUser.id, targetId, role });
+  if (res.ok) renderCoachSidebar(); else await uiAlert(res.error, '승인 오류');
+}
+function renderPermPanel(coaches){
+  document.getElementById('permArea').innerHTML = coaches.map(c => `
+    <div class="perm-row"><span>${c.name} (${c.id})${c.isAdmin?' <b style="color:var(--red)">관리자</b>':''}</span>
+    ${c.isAdmin ? '' : `<button style="background:${c.granted?'#ef4444':'#16a34a'}" onclick="togglePermission('${c.id}', ${!c.granted})">${c.granted?'권한 회수':'권한 부여'}</button>`}</div>`).join('');
+}
+async function togglePermission(targetId, granted){
+  const res = await api({ action:'setPermission', adminId: currentUser.id, targetId, granted });
+  if (res.ok) renderCoachSidebar(); else await uiAlert(res.error, '권한 오류');
+}
 function renderPlayerMgmt(players){
   const el = document.getElementById('playerMgmtArea');
   if (!players.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">등록된 선수가 없습니다.</div>'; return; }
@@ -1238,6 +1282,7 @@ async function showDashboard(){
       const done = latest.weekStartDate >= thisMonday;
       const pa = avg(latest.playerScores), ca = avg(latest.coachScores);
       pSum+=pa; pCnt++; cSum+=ca; cCnt++;
+      
       // 🌟 다이렉트 렌더링 함수 연결
       return `<td class="dash-cell" style="text-align:center; padding:8px; border:1px solid #e2e8f0; background:${done?'#f0fdf4':'white'};" onclick="openDashboardEntry('${p.id}', '${esc(p.name)}', '${t}', '${latest.entryId}')">
         <div style="font-size:10px; color:${done?'#16a34a':'#ef4444'}; font-weight:bold;">${done?'✔ 이번주 작성':'⚠ '+(latest.weekLabel||latest.weekStartDate)}</div>
@@ -1284,7 +1329,7 @@ async function showDashboard(){
     byTypeCache = res; 
 }
 
-/* 🎯 다이렉트 렌더링 함수 (과거 데이터 안전장치 적용 및 즉시 열림) */
+/* 🎯 다이렉트 렌더링 함수 (완벽한 안전장치) */
 function openDashboardEntry(playerId, playerName, type, entryId) {
   if(!entryId) return;
   
@@ -1293,7 +1338,6 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   currentType = type;
   sidebarMode = 'cycle';
   
-  // 사이드바 UI 강제 업데이트
   const playerSel = document.getElementById('playerSelect');
   if (playerSel) playerSel.value = playerId;
 
@@ -1313,22 +1357,20 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
     document.getElementById('typeSelect').value = type;
   }
   
-  // 백그라운드 리스트 갱신 (좌측)
   loadArchive();
 
-  // 🌟 캐시 데이터에서 일지를 찾아 즉시 렌더링
   const entry = byTypeCache.entries.find(e => e.entryId === entryId);
   if (entry) {
     currentEntry = JSON.parse(JSON.stringify(entry));
-    applySafeguards(); // 데이터 누락 에러 방지
+    applySafeguards(); // 🌟 데이터 누락 방지 완벽 작동
     expandedAccordionDay = null;
-    renderJournal();   // 화면 0초 컷 열림!
+    renderJournal();   
   } else {
-    loadEntry(entryId); 
+    loadEntry(entryId);
   }
 }
 
-function openDashboardDiary(playerId, playerName, targetDate) {
+async function openDashboardDiary(playerId, playerName, targetDate) {
   if(!targetDate) return uiToast('작성된 포토일지가 없습니다.', 'info');
   
   currentPlayerId = playerId;
@@ -1351,44 +1393,44 @@ function openDashboardDiary(playerId, playerName, targetDate) {
   initDiaryView();
   
   loading(true, '사진을 불러오는 중입니다...');
-  api({ action:'listDiary', playerId: currentPlayerId }).then(res => {
-    loading(false);
-    if(res.ok) {
-      document.getElementById('sidebarBody').innerHTML = `
-          <h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3>
-          <div id="diaryList">불러오는 중...</div>
-          <div class="sidebar-cal">
-            <div class="cal-header">
-              <button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button>
-              <span id="calTitle"></span>
-              <button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button>
-            </div>
-            <div class="cal-grid" id="calGrid"></div>
-          </div>`;
+  const res = await api({ action:'listDiary', playerId: currentPlayerId });
+  loading(false);
+  
+  if(res.ok) {
+    document.getElementById('sidebarBody').innerHTML = `
+        <h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3>
+        <div id="diaryList">불러오는 중...</div>
+        <div class="sidebar-cal">
+          <div class="cal-header">
+            <button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button>
+            <span id="calTitle"></span>
+            <button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button>
+          </div>
+          <div class="cal-grid" id="calGrid"></div>
+        </div>`;
 
-      diaryListCache = res.diary.map(d => {
-        if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
-        return d;
-      }).sort((a,b) => new Date(b.date) - new Date(a.date));
+    diaryListCache = res.diary.map(d => {
+      if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
+      return d;
+    }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
-      const d = new Date(targetDate);
-      calDate.setFullYear(d.getFullYear());
-      calDate.setMonth(d.getMonth());
-      renderCalendar();
+    const d = new Date(targetDate);
+    calDate.setFullYear(d.getFullYear());
+    calDate.setMonth(d.getMonth());
+    renderCalendar();
 
-      viewDiaryByDate(targetDate); 
+    viewDiaryByDate(targetDate);
 
-      const recent7 = diaryListCache.slice(0, 7);
-      const el = document.getElementById('diaryList');
-      if (!recent7.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>'; }
-      else {
-        el.innerHTML = recent7.map(di => `
-          <div class="diary-item" onclick="viewDiaryByDate('${di.date}')">
-            <img src="${getDriveImgUrl(di.photoUrl)}"><span style="flex:1;">${di.date}</span>
-          </div>`).join('');
-      }
+    const recent7 = diaryListCache.slice(0, 7);
+    const el = document.getElementById('diaryList');
+    if (!recent7.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>'; }
+    else {
+      el.innerHTML = recent7.map(di => `
+        <div class="diary-item" onclick="viewDiaryByDate('${di.date}')">
+          <img src="${getDriveImgUrl(di.photoUrl)}"><span style="flex:1;">${di.date}</span>
+        </div>`).join('');
     }
-  });
+  }
 }
 
 /* ---------- 📊 심층 분석 ---------- */
@@ -1760,16 +1802,277 @@ function renderByTypeResults(type, week){
     (entry ? submitted.push({p,entry}) : missing.push(p));
   });
   
-  // 🌟 클릭 시 강제 팝업 다이렉트 렌더링 호출
+  // 🌟 클릭 시 다이렉트 렌더링 호출
   document.getElementById('byTypeResults').innerHTML = `
     <div style="display:flex; gap:24px; flex-wrap:wrap;">
       <div style="flex:1; min-width:220px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
-        ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')">
+        ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openByTypeEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.entryId}')">
           <span>${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
           <span style="font-size:10px; color:#64748b;">선수 ${avg(s.entry.playerScores)} · 지도자 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
       <div style="flex:1; min-width:220px;"><h4 style="color:#ef4444;">⚠ 미제출 (${missing.length})</h4>
         ${missing.length ? missing.map(p=>`<div class="list-item" style="opacity:.55;"><span>${p.photo?`<img src="${p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
     </div>`;
+}
+
+// 🎯 주기화 보기에서 클릭 시 다이렉트 링크 전면 교체 (0.1초 렌더링 보장)
+function openByTypeEntry(playerId, playerName, entryId){
+  const entry = byTypeCache.entries.find(e => e.entryId === entryId); 
+  if (!entry) return;
+  
+  currentPlayerId = playerId; 
+  currentPlayerName = playerName; 
+  currentType = entry.type;
+  sidebarMode = 'cycle';
+  
+  const playerSel = document.getElementById('playerSelect');
+  if (playerSel) playerSel.value = playerId;
+  
+  const detailArea = document.getElementById('playerDetailArea');
+  if (detailArea) {
+    detailArea.innerHTML = `
+      <div class="mode-toggle" style="margin-top:14px;">
+        <button id="modeCycle" class="active" onclick="switchMode('cycle')">📋 주기화 목록</button>
+        <button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button>
+      </div>
+      <div id="sidebarBody">
+        <h3>일지 유형</h3>${typeSelectHtml('typeSelect', 'onTypeChange()')}
+        <hr style="margin: 18px 0 10px; border:0; border-top: 1px dashed #cbd5e1;">
+        <h3 style="margin-top:0;">${playerName} 주기화 목록</h3>
+        <div id="archiveList">목록 갱신 중...</div>
+      </div>`;
+    document.getElementById('typeSelect').value = currentType;
+  }
+  
+  currentEntry = JSON.parse(JSON.stringify(entry));
+  applySafeguards(); // 데이터 누락 에러 완전 차단!
+  expandedAccordionDay = null;
+  
+  renderJournal(); 
+  loadArchive();   
+}
+
+/* ---------- 엑셀 백업 ---------- */
+async function exportExcel(){
+  loading(true, '전체 데이터를 수집 중입니다.<br>시간이 다소 소요될 수 있습니다...');
+  const res = await api({ action:'getAllData', requesterId: currentUser.id }, true);
+  if (!res.ok) { loading(false); await uiAlert(res.error, '오류'); return; }
+
+  const players = res.users.filter(u => u.role === 'player');
+
+  let allDiaries = [];
+  const diariesPromises = players.map(p => api({ action: 'listDiary', playerId: p.id }, true));
+  const diariesResponses = await Promise.all(diariesPromises);
+  players.forEach((p, idx) => {
+    if (diariesResponses[idx].ok) {
+      const dList = diariesResponses[idx].diary.map(d => ({ ...d, playerName: p.name }));
+      allDiaries = allDiaries.concat(dList);
+    }
+  });
+
+  const summary = res.entries.map(e => ({
+    '선수명': e.playerName,
+    '훈련 유형': (JOURNAL_TYPES[e.type]||{}).title || e.type,
+    '주차 라벨': e.weekLabel,
+    '시작일': e.weekStartDate,
+    '자가평가(평균)': avg(e.playerScores),
+    '지도자평가(평균)': avg(e.coachScores),
+    '선수 의견': e.playerComment || '',
+    '지도자 피드백': e.coachFeedback || '',
+    '업데이트 일시': e.updatedAt
+  }));
+
+  const detailed = res.entries.map(e => {
+    const cats = (JOURNAL_TYPES[e.type]||{}).categories || ['1','2','3','4','5'];
+    let row = {
+      '선수명': e.playerName,
+      '훈련 유형': (JOURNAL_TYPES[e.type]||{}).title || e.type,
+      '주차 라벨': e.weekLabel,
+      '시작일': e.weekStartDate
+    };
+    cats.forEach((c, i) => { row[`[자가평가] ${c}`] = e.playerScores ? e.playerScores[i] || 0 : 0; });
+    cats.forEach((c, i) => { row[`[지도자평가] ${c}`] = e.coachScores ? e.coachScores[i] || 0 : 0; });
+    DAYS.forEach(day => { cats.forEach((c, i) => { row[`[${day} 목적] ${c}`] = e.goals && e.goals[day] ? e.goals[day][i] || '' : ''; }); });
+    cats.forEach((c, i) => { row[`[영상] ${c}`] = e.videos && e.videos[i] ? e.videos[i].url || '' : ''; });
+    return row;
+  });
+
+  const diarySheetData = allDiaries.map(d => ({
+    '선수명': d.playerName,
+    '작성 날짜': String(d.date).split('T')[0],
+    '메모 내용': d.memo || '',
+    '사진 URL': d.photoUrl || '',
+    '시스템 등록일시': d.createdAt || ''
+  }));
+
+  const users = res.users.map(u => ({
+    '이름': u.name,
+    '아이디(이메일)': u.id,
+    '계정 역할': u.role === 'player' ? '선수' : '지도자',
+    '전체조회 권한': u.granted ? 'O' : 'X',
+    '관리자 여부': u.isAdmin ? 'O' : 'X'
+  }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "주기화 요약");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailed), "주기화 세부 데이터(전체)");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(diarySheetData), "포토 일지 통합");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(users), "사용자 목록");
+
+  XLSX.writeFile(wb, `FC_SEOUL_전체데이터_백업_${dateStr(new Date())}.xlsx`);
+  loading(false);
+  uiToast('엑셀 파일(전체 통합본)이 다운로드되었습니다.');
+}
+
+/* ---------- Kuatiahaipyre (Journal rendering) ---------- */
+function renderJournal(){
+  hidePanels(); document.getElementById('journalWrapper').style.display = 'block';
+  const isPlayer = currentUser.role === 'player', isCoach = currentUser.role === 'coach';
+  const cats = JOURNAL_TYPES[currentEntry.type].categories;
+
+  document.getElementById('journalActionsRow').innerHTML = `
+    ${isCoach ? `<button style="background:#0284c7" onclick="exportPNG()"><i class="fa fa-image"></i> PNG 저장</button>
+    <button style="background:var(--black)" onclick="window.print()"><i class="fa fa-print"></i> PDF 저장</button>` : ''}
+    <button style="background:#16a34a" onclick="saveEntry()"><i class="fa fa-save"></i> 수동 저장</button>`;
+
+  const photo = isPlayer ? (currentUser.photo||'') : ((playersInfo[currentPlayerId]||{}).photo||'');
+  let html = `<div class="j-title">${photo?`<img src="${photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;border:2px solid var(--gold);">`:''}${JOURNAL_TYPES[currentEntry.type].title} — ${currentEntry.playerName||''}</div>`;
+  html += `<div class="j-meta">${currentEntry.weekLabel||''} · 시작일: ${currentEntry.weekStartDate}</div>`;
+  
+  html += `<div class="table-responsive"><table class="j-table"><thead><tr><th>선수,지도자 (${currentEntry.weekLabel||''})</th>${cats.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+
+  DAYS.forEach(d => {
+    const isExpanded = expandedAccordionDay === d ? 'acc-expanded' : '';
+    html += `<tr class="goal-row ${isExpanded}"><td data-label="구분" onclick="toggleMobileAccordion(this, '${d}')">개인 목적 (${d}) <i class="fa fa-chevron-down acc-icon"></i></td>`;
+    cats.forEach((c, ci) => {
+      const val = (currentEntry.goals[d]||[])[ci] || '';
+      html += `<td class="goal-cell" data-label="${c}"><textarea data-day="${d}" data-ci="${ci}" onkeyup="updateGoalLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 목표 작성">${esc(val)}</textarea></td>`;
+    });
+    html += `</tr>`;
+  });
+
+  html += `<tr class="score-row"><td data-label="구분">선수 자가평가<div class="eval-helper">[시도 목적 기준]<br>10번 3점, 15번 3.5점<br>20번 4점, 25번 4.5점<br>30 이상 5점<br><br><span style="color:#ef4444;">*같은 점수 2번 누르면 0.5점</span></div></td>${cats.map((c,ci)=>`<td data-label="${c}">${tapHtml('player', ci, currentEntry.playerScores[ci]||0, !isPlayer)}</td>`).join('')}</tr>`;
+  html += `<tr class="score-row"><td data-label="구분">지도자 평가<div class="eval-helper"><span style="color:#ef4444;">*같은 점수 2번 누르면 0.5점</span></div></td>${cats.map((c,ci)=>`<td data-label="${c}">${tapHtml('coach', ci, currentEntry.coachScores[ci]||0, !isCoach)}</td>`).join('')}</tr>`;
+
+  html += `<tr class="video-row"><td data-label="구분">영상 업로드</td>`;
+  cats.forEach((c, ci) => {
+    const v = currentEntry.videos[ci] || {url:''};
+    html += `<td data-label="${c}"><div class="video-cell">
+      <input type="text" placeholder="링크 붙여넣기" value="${esc(v.url||'')}" data-ci="${ci}" onkeyup="updateVideoLocal(this)" onblur="scheduleAutoSave()">
+      <div style="display:flex; gap:4px; align-items:center;">
+        <button onclick="document.getElementById('vf${ci}').click()"><i class="fa fa-upload"></i> 파일 업로드</button>
+        <input type="file" id="vf${ci}" accept="video/mp4,video/quicktime" style="display:none" data-ci="${ci}" onchange="uploadVideo(this)">
+      </div>
+      ${v.url ? `<a href="${v.url}" target="_blank">▶ 영상보기</a>` : ''}
+    </div></td>`;
+  });
+  html += `</tr></tbody></table></div>`;
+
+  html += `<div class="legend-row">${cats.map((c,i)=>`<div><span class="dot" style="background:${PALETTE[i]}"></span>${c}</div>`).join('')}</div>`;
+  html += `<div class="charts-row"><div class="chart-box"><h4>선수 자가평가 비율</h4><canvas id="playerPie"></canvas></div><div class="chart-box"><h4>지도자 평가 비율</h4><canvas id="coachPie"></canvas></div></div>`;
+
+  html += `<div class="note-box" style="background:#fff8f5; border-color:var(--red);">
+    <div style="font-size:12.5px; font-weight:900; color:var(--red); margin-bottom:6px;">✏️ 선수 의견 / 생각</div>
+    <textarea rows="3" onkeyup="updatePlayerCommentLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="이번 주 느낀 점, 다음 목표 등을 적어보세요.">${esc(currentEntry.playerComment)}</textarea></div>`;
+  html += `<div class="note-box" style="background:#f8fafc; border-color:var(--gold);">
+    <div style="font-size:12.5px; font-weight:900; margin-bottom:6px;">🗣 지도자 피드백</div>
+    <textarea rows="3" onkeyup="updateCoachFeedbackLocal(this)" onblur="scheduleAutoSave()" ${isCoach?'':'disabled'} placeholder="피드백과 다음 주 보완점을 적어주세요.">${esc(currentEntry.coachFeedback)}</textarea></div>`;
+
+  document.getElementById('journalCard').innerHTML = html;
+  drawPies(cats);
+}
+
+function tapHtml(row, ci, value, disabled){
+  let html = `<div class="tap-row">`;
+  for (let i=1;i<=5;i++) {
+    const on = Math.floor(value)===i && value>0;
+    const half = on && value%1!==0;
+    html += `<button type="button" class="tap-btn ${on?'active':''} ${half?'half':''}" ${disabled?'disabled':''} onclick="tapScore('${row}',${ci},${i})">${i}</button>`;
+  }
+  return html + `<span class="tap-val">${value||0}</span></div>`;
+}
+
+function tapScore(row, ci, i){
+  if ((row==='player') !== (currentUser.role==='player')) return;
+  const arr = row==='player' ? currentEntry.playerScores : currentEntry.coachScores;
+  const cur = arr[ci]||0;
+  arr[ci] = (Math.floor(cur)===i && cur>0) ? (cur%1!==0 ? 0 : i+0.5) : i;
+  renderJournal(); 
+  scheduleAutoSave(); 
+}
+
+function updateGoalLocal(el){ currentEntry.goals[el.dataset.day][parseInt(el.dataset.ci)] = el.value; }
+function updateVideoLocal(el){ currentEntry.videos[parseInt(el.dataset.ci)] = { url: el.value }; }
+function updatePlayerCommentLocal(el){ currentEntry.playerComment = el.value; }
+function updateCoachFeedbackLocal(el){ currentEntry.coachFeedback = el.value; }
+
+function toggleMobileAccordion(el, day) {
+  if (window.innerWidth > 820) return; 
+  const tr = el.closest('tr');
+  if (tr.classList.contains('acc-expanded')) {
+    tr.classList.remove('acc-expanded');
+    expandedAccordionDay = null; 
+  } else {
+    document.querySelectorAll('.goal-row').forEach(row => row.classList.remove('acc-expanded'));
+    tr.classList.add('acc-expanded');
+    expandedAccordionDay = day; 
+  }
+}
+
+async function uploadVideo(el){
+  const file = el.files[0]; if (!file) return;
+  if (file.size > 25*1024*1024) await uiAlert('25MB 초과 파일은 업로드가 원활하지 않을 수 있어요.', '주의');
+  const ci = parseInt(el.dataset.ci);
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    loading(true, '대용량 영상/파일을 업로드하는 중입니다.<br>창을 닫지 마세요...');
+    const res = await api({ action:'uploadFile', base64: ev.target.result, filename: file.name, mimeType: file.type }, true);
+    loading(false);
+    if (res.ok) { currentEntry.videos[ci] = { url: res.viewUrl }; renderJournal(); uiToast('업로드 완료!'); }
+    else await uiAlert('업로드 실패: ' + res.error, '오류');
+  };
+  reader.readAsDataURL(file);
+}
+
+function drawPies(cats){
+  const pSum = currentEntry.playerScores.reduce((a,b)=>a+b,0) || 1;
+  const cSum = currentEntry.coachScores.reduce((a,b)=>a+b,0) || 1;
+  const pData = currentEntry.playerScores.map(v=> Math.round(v/pSum*1000)/10);
+  const cData = currentEntry.coachScores.map(v=> Math.round(v/cSum*1000)/10);
+  if (playerChart) playerChart.destroy();
+  if (coachChart) coachChart.destroy();
+  const opts = { responsive:true, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}} } };
+  playerChart = new Chart(document.getElementById('playerPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:pData, backgroundColor:PALETTE }] }, options:opts });
+  coachChart = new Chart(document.getElementById('coachPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:cData, backgroundColor:PALETTE }] }, options:opts });
+}
+
+async function saveEntry(){
+  if (!currentEntry) return;
+  loading(true, '일지를 저장 중입니다...');
+  const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
+  loading(false);
+  if (res.ok) { currentEntry.entryId = res.entryId; uiToast('저장되었습니다.'); loadArchive(); }
+  else await uiAlert('저장 실패: ' + res.error, '오류');
+}
+
+function scheduleAutoSave(){
+  if (!currentEntry) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    autoSaveTimer = null; 
+    const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
+    if (res.ok) { currentEntry.entryId = res.entryId; uiToast('자동저장되었습니다.'); }
+  }, 2000);
+}
+
+async function exportPNG(){
+  const originalScrollY = window.scrollY;
+  window.scrollTo(0, 0);
+  const canvas = await html2canvas(document.getElementById('journalCard'), { scale:2, useCORS:true, backgroundColor:'#ffffff', scrollY: 0 });
+  window.scrollTo(0, originalScrollY);
+  
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png'); a.download = `훈련일지_${currentEntry.playerName}_${currentEntry.weekStartDate}.png`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 </script>
 </body>
