@@ -684,7 +684,9 @@ function enterApp(){
   document.getElementById('appScreen').style.display = 'block';
   const av = document.getElementById('userAvatar');
   if (currentUser.photo) { av.src = currentUser.photo; av.style.display = 'inline-block'; } else av.style.display = 'none';
-  if (currentUser.role !== 'player' && currentUser.role !== 'coach') { showPendingScreen(); return; }
+  
+  // 🌟 관리자 승인이 나지 않은 계정은 대기 화면으로 강제 이동
+  if (!currentUser.granted && !currentUser.isAdmin) { showPendingScreen(); return; }
   
   document.getElementById('userLabel').innerText = `${currentUser.name} (${currentUser.role==='player'?'선수':'지도자'}${currentUser.isAdmin?' · 관리자':''})`;
   
@@ -707,7 +709,7 @@ function showPendingScreen(){
   document.getElementById('mainArea').innerHTML = `
     <div class="empty" style="color:white; display:block;">
       <i class="fa fa-hourglass-half" style="font-size:28px; margin-bottom:10px; display:block;"></i>
-      관리자가 아직 승인하지 않았어요.<br>지도자님께 문의해주세요.
+      최고 관리자가 아직 승인하지 않았어요.<br>관리자에게 가입 승인을 요청해주세요.
     </div>`;
 }
 
@@ -1164,7 +1166,9 @@ async function renderCoachSidebar() {
     }
 
     if (currentUser.isAdmin) { 
-      renderPendingPanel(res.users.filter(u=>u.role!=='player' && u.role!=='coach')); 
+      // 🌟 권한이 없는(대기 중인) 모든 사용자만 필터링하여 노출
+      const pendingUsers = res.users.filter(u => u.granted === false && u.isAdmin === false);
+      renderPendingPanel(pendingUsers); 
       renderPermPanel(res.users.filter(u=>u.role==='coach')); 
       renderPlayerMgmt(players); 
     }
@@ -1179,15 +1183,15 @@ function renderPendingPanel(pending){
   const el = document.getElementById('pendingArea');
   if (!pending.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">대기 중인 가입자가 없습니다.</div>'; return; }
   el.innerHTML = pending.map(u => `
-    <div class="perm-row"><span>${u.photo?`<img src="${u.photo}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px;">`:''}${u.name} (${u.id})</span>
+    <div class="perm-row"><span>${u.photo?`<img src="${u.photo}" style="width:18px;height:18px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:5px;">`:''}${u.name} (신청: ${u.role === 'player' ? '선수' : '지도자'})</span>
     <span style="display:flex; gap:4px;">
       <button style="background:#0284c7" onclick="approveUser('${u.id}','player')">선수로 승인</button>
       <button style="background:#16a34a" onclick="approveUser('${u.id}','coach')">지도자로 승인</button>
     </span></div>`).join('');
 }
 async function approveUser(targetId, role){
-  const res = await api({ action:'setRole', adminId: currentUser.id, targetId, role });
-  if (res.ok) renderCoachSidebar(); else await uiAlert(res.error, '승인 오류');
+  const res = await api({ action:'setRoleAndApprove', adminId: currentUser.id, targetId, role });
+  if (res.ok) { uiToast('승인이 완료되었습니다.'); renderCoachSidebar(); } else await uiAlert(res.error, '승인 오류');
 }
 function renderPermPanel(coaches){
   document.getElementById('permArea').innerHTML = coaches.map(c => `
@@ -2077,4 +2081,5 @@ async function exportPNG(){
 </script>
 </body>
 </html>
+
 
