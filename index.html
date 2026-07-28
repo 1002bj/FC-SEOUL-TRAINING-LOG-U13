@@ -13,13 +13,17 @@
 <link rel="apple-touch-icon" href="https://upload.wikimedia.org/wikipedia/commons/f/ff/FC_Seoul_logotype.png">
 <link rel="shortcut icon" href="https://upload.wikimedia.org/wikipedia/commons/f/ff/FC_Seoul_logotype.png">
 
+<!-- 차트 및 플러그인 로드 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 <style>
+/* CSS 스타일링 */
 :root{ --red:#E30613; --black:#1a1a1a; --gold:#C5A059; --bg:#334155; --salmon:#F5B7B1; }
 *{ box-sizing:border-box; -webkit-print-color-adjust:exact; }
 body{ margin:0; font-family:'Apple SD Gothic Neo', sans-serif; background:var(--bg); }
@@ -353,6 +357,9 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
 <div id="pdfReportContainer"></div>
 
 <script>
+// 🌟 차트 플러그인(퍼센트 표시) 전역 등록
+Chart.register(ChartDataLabels);
+
 const DEFAULT_BACKEND_URL = "https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec";
 
 const JOURNAL_TYPES = {
@@ -360,7 +367,9 @@ const JOURNAL_TYPES = {
   pass:    { title: "패스 주기화",   categories: ["상황인지 후 패스 연결","볼 소유를 위한 패스선택","공격적인 패스선택,움직임 (전진)","전진하기 위한 도전적인 패스,움직임(전진)","공수전환 시도 & 협력수비"] },
   touch:   { title: "터치 주기화",   categories: ["목적이 있는 터치 (공간,수비위치) 넓이","상황인지 볼소유를 위한 (소유) 터치","터치의 방향성 (공격적) (전진)","득점을 위한 터치 (터치)","1대1,2대2 수비"] }
 };
-const DAYS = ["월","화","수","목","금","경기"];
+
+// 🌟 토요일 항목 추가!
+const DAYS = ["월","화","수","목","금","토","경기"];
 const PALETTE = ["#F4C430","#F2994A","#EB5B2F","#E12F2F","#8B1E1E"];
 
 const avg = arr => !arr || !arr.length ? 0 : Math.round(arr.reduce((a,b)=>a+(b||0),0)/arr.length*10)/10;
@@ -394,8 +403,7 @@ let analyticsMode = 'player';
 let calDate = new Date(); 
 let expandedAccordionDay = null;
 
-// 🌟 데이터 누락 방지 안전장치 (Safeguards)
-// 과거 일지 클릭 시 로딩만 돌고 멈추는 에러를 완벽 방지합니다.
+// 데이터 누락 방지 안전장치
 function applySafeguards() {
   if (!currentEntry) return;
   if (!currentEntry.type || !JOURNAL_TYPES[currentEntry.type]) {
@@ -496,11 +504,6 @@ window.onload = () => {
   if (savedUser && url) { currentUser = savedUser; enterApp(); }
 };
 
-function toggleConfigBoxes(){
-  const show = document.getElementById('backendConfigBox').style.display === 'none';
-  document.getElementById('backendConfigBox').style.display = show ? 'block' : 'none';
-}
-
 function toggleForm(which){
   document.getElementById('loginForm').style.display = which==='login' ? 'block':'none';
   document.getElementById('registerForm').style.display = which==='register' ? 'block':'none';
@@ -511,6 +514,7 @@ function toggleForm(which){
 }
 function backendUrl(){ const v=document.getElementById('backendUrl').value.trim(); if(v) localStorage.setItem('tj_url', v); return v; }
 
+/* API Fetch + 에러 방지(Retry) 및 시차 보정 로직 결합 */
 async function api(payload, silent){
   const url = backendUrl();
   if (!url) { if(!silent) await uiAlert('백엔드 URL을 먼저 입력해주세요.', '설정 오류'); return {ok:false}; }
@@ -649,7 +653,7 @@ async function doRegister(){
   
   const res = await api({ action:'register', id, pw, name, role, photo: regPhotoData });
   if (res.ok) {
-    await uiAlert('회원가입 완료! 로그인해주세요.', '가입 완료');
+    await uiAlert('회원가입이 완료되었습니다.\n최고 관리자의 승인 후 로그인할 수 있습니다.', '가입 대기');
     toggleForm('login');
     document.getElementById('loginId').value = id;
     regPhotoData = "";
@@ -794,13 +798,13 @@ async function onTypeChange(){
 
 async function loadArchive(){
   const el = document.getElementById('archiveList');
-  el.innerHTML = '목록을 불러오는 중...';
+  if(el) el.innerHTML = '목록을 불러오는 중...';
   const res = await api({ action:'listEntries', playerId: currentPlayerId, type: currentType });
-  if (!res.ok) { el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
-  if (!res.entries.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 일지가 없습니다.</div>'; return; }
+  if (!res.ok) { if(el) el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
+  if (!res.entries.length) { if(el) el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 일지가 없습니다.</div>'; return; }
   
   const canDel = true; 
-  el.innerHTML = res.entries.map(en => `
+  if(el) el.innerHTML = res.entries.map(en => `
     <div class="list-item">
       <span onclick="loadEntry('${en.entryId}')" style="flex:1; cursor:pointer; font-weight:bold;">
         <i class="fa fa-file-alt" style="margin-right:6px; color:#94a3b8;"></i>
@@ -849,7 +853,6 @@ async function createEntry(){
   renderJournal();
 }
 
-// 🌟 에러 완전 방지 로직을 추가하여 다이렉트 오픈을 보장합니다.
 function loadEntry(entryId){
   api({ action:'getEntry', entryId }).then(async res => {
     if (!res.ok) { await uiAlert(res.error, '오류'); return; }
@@ -857,7 +860,7 @@ function loadEntry(entryId){
     currentEntry.entryId = entryId;
     currentType = currentEntry.type || currentType;
     
-    applySafeguards(); // 안전장치 호출!
+    applySafeguards(); // 데이터 안전장치 적용
 
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
@@ -1132,7 +1135,9 @@ async function renderCoachSidebar() {
 
     let adminHtml = '';
     if (currentUser.isAdmin) {
-      // 🌟 가입 승인 대기, 권한 관리 다시 부활 완료
+      // 🌟 권한이 없는(대기 중인) 모든 사용자만 필터링하여 노출
+      const pendingUsers = res.users.filter(u => u.granted === false && u.isAdmin === false);
+      
       adminHtml = `
         <hr style="margin: 20px 0; border:0; border-top: 1px solid #cbd5e1;">
         <h3 style="margin-top:0;">가입 승인 대기</h3><div id="pendingArea"></div>
@@ -1142,6 +1147,8 @@ async function renderCoachSidebar() {
         <h3 style="margin-top:0;">선수 계정 관리</h3><div id="playerMgmtArea"></div>
       `;
       sb.insertAdjacentHTML('beforeend', adminHtml);
+      renderPendingPanel(pendingUsers); 
+      renderPermPanel(res.users.filter(u=>u.role==='coach')); 
     }
 
     if (!currentUser.granted && !currentUser.isAdmin) {
@@ -1166,10 +1173,6 @@ async function renderCoachSidebar() {
     }
 
     if (currentUser.isAdmin) { 
-      // 🌟 권한이 없는(대기 중인) 모든 사용자만 필터링하여 노출
-      const pendingUsers = res.users.filter(u => u.granted === false && u.isAdmin === false);
-      renderPendingPanel(pendingUsers); 
-      renderPermPanel(res.users.filter(u=>u.role==='coach')); 
       renderPlayerMgmt(players); 
     }
 
@@ -1286,8 +1289,6 @@ async function showDashboard(){
       const done = latest.weekStartDate >= thisMonday;
       const pa = avg(latest.playerScores), ca = avg(latest.coachScores);
       pSum+=pa; pCnt++; cSum+=ca; cCnt++;
-      
-      // 🌟 다이렉트 렌더링 함수 연결
       return `<td class="dash-cell" style="text-align:center; padding:8px; border:1px solid #e2e8f0; background:${done?'#f0fdf4':'white'};" onclick="openDashboardEntry('${p.id}', '${esc(p.name)}', '${t}', '${latest.entryId}')">
         <div style="font-size:10px; color:${done?'#16a34a':'#ef4444'}; font-weight:bold;">${done?'✔ 이번주 작성':'⚠ '+(latest.weekLabel||latest.weekStartDate)}</div>
         <div style="font-size:10.5px;">선수 ${pa} · 지도자 ${ca}</div></td>`;
@@ -1333,7 +1334,6 @@ async function showDashboard(){
     byTypeCache = res; 
 }
 
-/* 🎯 다이렉트 렌더링 함수 (완벽한 안전장치) */
 function openDashboardEntry(playerId, playerName, type, entryId) {
   if(!entryId) return;
   
@@ -1366,7 +1366,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   const entry = byTypeCache.entries.find(e => e.entryId === entryId);
   if (entry) {
     currentEntry = JSON.parse(JSON.stringify(entry));
-    applySafeguards(); // 🌟 데이터 누락 방지 완벽 작동
+    applySafeguards(); // 안전장치 
     expandedAccordionDay = null;
     renderJournal();   
   } else {
@@ -1397,44 +1397,43 @@ async function openDashboardDiary(playerId, playerName, targetDate) {
   initDiaryView();
   
   loading(true, '사진을 불러오는 중입니다...');
-  const res = await api({ action:'listDiary', playerId: currentPlayerId });
-  loading(false);
-  
-  if(res.ok) {
-    document.getElementById('sidebarBody').innerHTML = `
-        <h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3>
-        <div id="diaryList">불러오는 중...</div>
-        <div class="sidebar-cal">
-          <div class="cal-header">
-            <button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button>
-            <span id="calTitle"></span>
-            <button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button>
-          </div>
-          <div class="cal-grid" id="calGrid"></div>
-        </div>`;
+  api({ action:'listDiary', playerId: currentPlayerId }).then(res => {
+    loading(false);
+    if(res.ok) {
+      document.getElementById('sidebarBody').innerHTML = `
+          <h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3>
+          <div id="diaryList">불러오는 중...</div>
+          <div class="sidebar-cal">
+            <div class="cal-header">
+              <button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button>
+              <span id="calTitle"></span>
+              <button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button>
+            </div>
+            <div class="cal-grid" id="calGrid"></div>
+          </div>`;
 
-    diaryListCache = res.diary.map(d => {
-      if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
-      return d;
-    }).sort((a,b) => new Date(b.date) - new Date(a.date));
+      diaryListCache = res.diary.map(d => {
+        if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
+        return d;
+      }).sort((a,b) => new Date(b.date) - new Date(a.date));
 
-    const d = new Date(targetDate);
-    calDate.setFullYear(d.getFullYear());
-    calDate.setMonth(d.getMonth());
-    renderCalendar();
+      const d = new Date(targetDate);
+      calDate.setFullYear(d.getFullYear());
+      calDate.setMonth(d.getMonth());
+      renderCalendar();
+      viewDiaryByDate(targetDate); 
 
-    viewDiaryByDate(targetDate);
-
-    const recent7 = diaryListCache.slice(0, 7);
-    const el = document.getElementById('diaryList');
-    if (!recent7.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>'; }
-    else {
-      el.innerHTML = recent7.map(di => `
-        <div class="diary-item" onclick="viewDiaryByDate('${di.date}')">
-          <img src="${getDriveImgUrl(di.photoUrl)}"><span style="flex:1;">${di.date}</span>
-        </div>`).join('');
+      const recent7 = diaryListCache.slice(0, 7);
+      const el = document.getElementById('diaryList');
+      if (!recent7.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>'; }
+      else {
+        el.innerHTML = recent7.map(di => `
+          <div class="diary-item" onclick="viewDiaryByDate('${di.date}')">
+            <img src="${getDriveImgUrl(di.photoUrl)}"><span style="flex:1;">${di.date}</span>
+          </div>`).join('');
+      }
     }
-  }
+  });
 }
 
 /* ---------- 📊 심층 분석 ---------- */
@@ -1562,10 +1561,11 @@ function renderPlayerAnalytics() {
   const baseName = document.getElementById('analyticsPlayer').options[document.getElementById('analyticsPlayer').selectedIndex].text;
   const compareName = comparePlayerId ? document.getElementById('analyticsComparePlayer').options[document.getElementById('analyticsComparePlayer').selectedIndex].text : '';
 
+  // 🌟 심층분석 개인 랭킹 기준을 "선수 자가평가"로 변경
   let playerAverages = {};
   filteredEntries.forEach(e => {
     if(!playerAverages[e.playerId]) playerAverages[e.playerId] = { sum:0, count:0 };
-    const avgScore = avg(e.coachScores);
+    const avgScore = avg(e.playerScores); // 🌟 변경됨 (선수 점수)
     if(avgScore > 0) { playerAverages[e.playerId].sum += avgScore; playerAverages[e.playerId].count++; }
   });
   
@@ -1584,13 +1584,13 @@ function renderPlayerAnalytics() {
     baseOverallAvg = Math.round(rankingList[myRankIdx].avg * 10) / 10;
     percentileStr = `${baseName} 선수의 평균 점수는 <span style="color:var(--black);">${baseOverallAvg}점</span>으로, 팀 내 <span style="color:var(--red);">상위 ${percentile}%</span> (${totalPlayers}명 중 ${myRank}위) 수준입니다.`;
   } else {
-    percentileStr = '지도자 평가 점수가 아직 입력되지 않았습니다.';
+    percentileStr = '선수 평가 점수가 아직 입력되지 않았습니다.';
   }
 
   document.getElementById('analyticsContent').innerHTML = `
       <div id="analyticsSummary" style="background:#fff5f5; border:1px solid #fca5a5; border-radius:8px; padding:16px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <div>
-          <div style="font-size:12px; color:var(--red); font-weight:bold;">해당 기간 종합 평가 (지도자 점수 기준)</div>
+          <div style="font-size:12px; color:var(--red); font-weight:bold;">해당 기간 종합 평가 (선수 자가평가 기준)</div>
           <div style="font-size:18px; font-weight:900; margin-top:4px;">${percentileStr}</div>
           <div style="font-size:11px; color:#64748b; margin-top:2px;">* 점수 데이터가 부족할 경우 순위의 의미가 불명확할 수 있습니다.</div>
         </div>
@@ -1616,9 +1616,10 @@ function renderPlayerAnalytics() {
     let compCatSums = cats.map(()=>0), compCatCounts = cats.map(()=>0);
     let teamCatSums = cats.map(()=>0), teamCatCounts = cats.map(()=>0);
 
-    baseEntries.forEach(e => { e.coachScores.forEach((score, i) => { if(score > 0) { baseCatSums[i] += score; baseCatCounts[i]++; } }); });
-    compareEntries.forEach(e => { e.coachScores.forEach((score, i) => { if(score > 0) { compCatSums[i] += score; compCatCounts[i]++; } }); });
-    filteredEntries.forEach(e => { e.coachScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } }); });
+    // 🌟 레이더 차트 기준도 "선수 평가"로 통일 
+    baseEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { baseCatSums[i] += score; baseCatCounts[i]++; } }); });
+    compareEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { compCatSums[i] += score; compCatCounts[i]++; } }); });
+    filteredEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } }); });
 
     const baseCatAvgs = baseCatSums.map((sum, i) => baseCatCounts[i] ? Math.round(sum/baseCatCounts[i]*10)/10 : 0);
     const compCatAvgs = compCatSums.map((sum, i) => compCatCounts[i] ? Math.round(sum/compCatCounts[i]*10)/10 : 0);
@@ -1631,7 +1632,7 @@ function renderPlayerAnalytics() {
     if(comparePlayerId) radarDatasets.push({ label: `${compareName} (비교)`, data: compCatAvgs, backgroundColor: 'rgba(2,132,199,0.2)', borderColor: '#0284c7', pointBackgroundColor: '#0284c7' });
 
     if(analyticsRadarChart) analyticsRadarChart.destroy();
-    analyticsRadarChart = new Chart(document.getElementById('analyticsRadar'), { type: 'radar', data: { labels: cats, datasets: radarDatasets }, options: { responsive: true, scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } } } });
+    analyticsRadarChart = new Chart(document.getElementById('analyticsRadar'), { type: 'radar', data: { labels: cats, datasets: radarDatasets }, options: { responsive: true, scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } }, plugins: { datalabels: { display: false } } } });
 
     let allDates = new Set();
     baseEntries.forEach(e => allDates.add(e.weekStartDate));
@@ -1649,7 +1650,7 @@ function renderPlayerAnalytics() {
     if(comparePlayerId) lineDatasets.push({ label: `${compareName} (지도자 평가)`, data: compLineData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, spanGaps: true });
 
     if(analyticsLineChart) analyticsLineChart.destroy();
-    analyticsLineChart = new Chart(document.getElementById('analyticsLine'), { type: 'line', data: { labels: sortedDates, datasets: lineDatasets }, options: { responsive: true, scales: { y: { min: 0, max: 5 } } } });
+    analyticsLineChart = new Chart(document.getElementById('analyticsLine'), { type: 'line', data: { labels: sortedDates, datasets: lineDatasets }, options: { responsive: true, scales: { y: { min: 0, max: 5 } }, plugins: { datalabels: { display: false } } } });
 
     reportData = { baseName, typeTitle: JOURNAL_TYPES[type].title, periodName: document.getElementById('analyticsPeriod').options[document.getElementById('analyticsPeriod').selectedIndex].text, baseOverallAvg, percentileStr, latestFeedbacks: baseEntries.slice(-3).map(e => ({ week: e.weekLabel||e.weekStartDate, text: e.coachFeedback })) };
   }, 50);
@@ -1668,13 +1669,14 @@ function renderWeekAnalytics() {
   let overallSum = 0, overallCount = 0;
   let playerRankings = [];
 
+  // 🌟 주차별 분석 기준도 "선수 평가"로 변경
   entries.forEach(e => {
-    const scoreAvg = avg(e.coachScores);
+    const scoreAvg = avg(e.playerScores); // 선수 기준 변경
     if(scoreAvg > 0) {
       overallSum += scoreAvg; overallCount++;
       playerRankings.push({ id: e.playerId, name: e.playerName, avg: scoreAvg });
     }
-    e.coachScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } });
+    e.playerScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } });
   });
 
   const teamCatAvgs = teamCatSums.map((sum, i) => teamCatCounts[i] ? Math.round(sum/teamCatCounts[i]*10)/10 : 0);
@@ -1684,7 +1686,7 @@ function renderWeekAnalytics() {
   document.getElementById('analyticsContent').innerHTML = `
     <div style="background:#fff5f5; border:1px solid #fca5a5; border-radius:8px; padding:16px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div>
-        <div style="font-size:12px; color:var(--red); font-weight:bold;">${entries[0].weekLabel || week} 팀 평균 평가 (지도자 점수)</div>
+        <div style="font-size:12px; color:var(--red); font-weight:bold;">${entries[0].weekLabel || week} 팀 평균 평가 (선수 자가평가 점수)</div>
         <div style="font-size:24px; font-weight:900; margin-top:4px;">${teamOverallAvg} <span style="font-size:14px; color:#64748b; font-weight:normal;">/ 5.0</span></div>
         <div style="font-size:11px; color:#64748b; margin-top:2px;">제출 및 평가 완료 선수: ${overallCount}명</div>
       </div>
@@ -1712,7 +1714,7 @@ function renderWeekAnalytics() {
 
   setTimeout(() => {
     if(analyticsRadarChart) analyticsRadarChart.destroy();
-    analyticsRadarChart = new Chart(document.getElementById('analyticsWeekRadar'), { type: 'radar', data: { labels: cats, datasets: [{ label: '팀 평균 점수', data: teamCatAvgs, backgroundColor: 'rgba(26,26,26,0.15)', borderColor: '#1a1a1a', pointBackgroundColor: '#1a1a1a' }] }, options: { responsive: true, scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } } } });
+    analyticsRadarChart = new Chart(document.getElementById('analyticsWeekRadar'), { type: 'radar', data: { labels: cats, datasets: [{ label: '팀 평균 점수', data: teamCatAvgs, backgroundColor: 'rgba(26,26,26,0.15)', borderColor: '#1a1a1a', pointBackgroundColor: '#1a1a1a' }] }, options: { responsive: true, scales: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } }, plugins: { datalabels: { display: false } } } });
   }, 50);
 }
 
@@ -1762,7 +1764,7 @@ async function generatePDFReport() {
   } catch (err) { uiAlert('PDF 생성 중 오류가 발생했습니다: ' + err.message, '오류'); } finally { loading(false); }
 }
 
-/* ---------- 🔄 주기화별로 보기 (클릭 다이렉트 렌더링) ---------- */
+/* ---------- 🔄 주기화별로 보기 ---------- */
 async function showByType(){
   await flushPendingSaves(); 
   hidePanels(); document.getElementById('byTypeWrapper').style.display = 'block';
@@ -1806,53 +1808,15 @@ function renderByTypeResults(type, week){
     (entry ? submitted.push({p,entry}) : missing.push(p));
   });
   
-  // 🌟 클릭 시 다이렉트 렌더링 호출
   document.getElementById('byTypeResults').innerHTML = `
     <div style="display:flex; gap:24px; flex-wrap:wrap;">
       <div style="flex:1; min-width:220px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
-        ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openByTypeEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.entryId}')">
+        ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')">
           <span>${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
           <span style="font-size:10px; color:#64748b;">선수 ${avg(s.entry.playerScores)} · 지도자 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
       <div style="flex:1; min-width:220px;"><h4 style="color:#ef4444;">⚠ 미제출 (${missing.length})</h4>
         ${missing.length ? missing.map(p=>`<div class="list-item" style="opacity:.55;"><span>${p.photo?`<img src="${p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
     </div>`;
-}
-
-// 🎯 주기화 보기에서 클릭 시 다이렉트 링크 전면 교체 (0.1초 렌더링 보장)
-function openByTypeEntry(playerId, playerName, entryId){
-  const entry = byTypeCache.entries.find(e => e.entryId === entryId); 
-  if (!entry) return;
-  
-  currentPlayerId = playerId; 
-  currentPlayerName = playerName; 
-  currentType = entry.type;
-  sidebarMode = 'cycle';
-  
-  const playerSel = document.getElementById('playerSelect');
-  if (playerSel) playerSel.value = playerId;
-  
-  const detailArea = document.getElementById('playerDetailArea');
-  if (detailArea) {
-    detailArea.innerHTML = `
-      <div class="mode-toggle" style="margin-top:14px;">
-        <button id="modeCycle" class="active" onclick="switchMode('cycle')">📋 주기화 목록</button>
-        <button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button>
-      </div>
-      <div id="sidebarBody">
-        <h3>일지 유형</h3>${typeSelectHtml('typeSelect', 'onTypeChange()')}
-        <hr style="margin: 18px 0 10px; border:0; border-top: 1px dashed #cbd5e1;">
-        <h3 style="margin-top:0;">${playerName} 주기화 목록</h3>
-        <div id="archiveList">목록 갱신 중...</div>
-      </div>`;
-    document.getElementById('typeSelect').value = currentType;
-  }
-  
-  currentEntry = JSON.parse(JSON.stringify(entry));
-  applySafeguards(); // 데이터 누락 에러 완전 차단!
-  expandedAccordionDay = null;
-  
-  renderJournal(); 
-  loadArchive();   
 }
 
 /* ---------- 엑셀 백업 ---------- */
@@ -2037,14 +2001,32 @@ async function uploadVideo(el){
   reader.readAsDataURL(file);
 }
 
+// 🌟 차트 플러그인(datalabels) 적용
 function drawPies(cats){
   const pSum = currentEntry.playerScores.reduce((a,b)=>a+b,0) || 1;
   const cSum = currentEntry.coachScores.reduce((a,b)=>a+b,0) || 1;
   const pData = currentEntry.playerScores.map(v=> Math.round(v/pSum*1000)/10);
   const cData = currentEntry.coachScores.map(v=> Math.round(v/cSum*1000)/10);
+  
   if (playerChart) playerChart.destroy();
   if (coachChart) coachChart.destroy();
-  const opts = { responsive:true, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'%'}} } };
+  
+  const opts = { 
+    responsive: true, 
+    plugins: { 
+      legend: { display: false }, 
+      tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + '%' } },
+      // 🌟 데이터 라벨(숫자) 기본 표시
+      datalabels: {
+        color: '#ffffff',
+        font: { weight: 'bold', size: 11 },
+        formatter: (value) => {
+          return value > 0 ? value + '%' : ''; // 0%인 조각은 숨김
+        }
+      }
+    } 
+  };
+  
   playerChart = new Chart(document.getElementById('playerPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:pData, backgroundColor:PALETTE }] }, options:opts });
   coachChart = new Chart(document.getElementById('coachPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:cData, backgroundColor:PALETTE }] }, options:opts });
 }
@@ -2081,5 +2063,4 @@ async function exportPNG(){
 </script>
 </body>
 </html>
-
 
