@@ -43,6 +43,7 @@ body{ margin:0; font-family:'Apple SD Gothic Neo', sans-serif; background:var(--
 .btn-black{ background:var(--black); color:white; }
 .btn-outline{ background:white; color:var(--black); border:1px solid #cbd5e1; }
 .btn-blue{ background:#0284c7; color:white; }
+.btn-green{ background:#16a34a; color:white; }
 .toggle-link{ text-align:center; font-size:12px; color:#0284c7; cursor:pointer; margin-top:4px; }
 .err{ color:var(--red); font-size:11.5px; margin:-4px 0 10px; min-height:14px; font-weight:bold; }
 .cfg-box{ background:#f8fafc; border:1px dashed #cbd5e1; border-radius:6px; padding:8px; margin-bottom:14px; }
@@ -233,7 +234,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.video-row td:first-c
 </head>
 <body>
 
-<!-- 로그인 스크린 -->
+<!-- 단 1개의 로그인 스크린 -->
 <div id="loginScreen">
   <div class="login-card">
     <div class="login-head">
@@ -362,14 +363,15 @@ Chart.register(ChartDataLabels);
 
 const DEFAULT_BACKEND_URL = "https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec";
 
+// 🌟 항목 앞에 숫자(1~5) 추가 완료
 const JOURNAL_TYPES = {
-  dribble: { title: "드리블 주기화", categories: ["상황인지 + 속도변화 (소유)","볼소유를 위한 드리블 (소유)","도전적인 드리블 + 슈팅 (전진)","전진적인 드리블 + 득점 (전진)","2대2, 3대2 수비"] },
-  pass:    { title: "패스 주기화",   categories: ["상황인지 후 패스 연결","볼 소유를 위한 패스선택","공격적인 패스선택,움직임 (전진)","전진하기 위한 도전적인 패스,움직임(전진)","공수전환 시도 & 협력수비"] },
-  touch:   { title: "터치 주기화",   categories: ["목적이 있는 터치 (공간,수비위치) 넓이","상황인지 볼소유를 위한 (소유) 터치","터치의 방향성 (공격적) (전진)","득점을 위한 터치 (터치)","1대1,2대2 수비"] }
+  dribble: { title: "드리블 주기화", categories: ["1. 상황인지 + 속도변화 (소유)","2. 볼소유를 위한 드리블 (소유)","3. 도전적인 드리블 + 슈팅 (전진)","4. 전진적인 드리블 + 득점 (전진)","5. 2대2, 3대2 수비"] },
+  pass:    { title: "패스 주기화",   categories: ["1. 상황인지 후 패스 연결","2. 볼 소유를 위한 패스선택","3. 공격적인 패스선택,움직임 (전진)","4. 전진하기 위한 도전적인 패스,움직임(전진)","5. 공수전환 시도 & 협력수비"] },
+  touch:   { title: "터치 주기화",   categories: ["1. 목적이 있는 터치 (공간,수비위치) 넓이","2. 상황인지 볼소유를 위한 (소유) 터치","3. 터치의 방향성 (공격적) (전진)","4. 득점을 위한 터치 (터치)","5. 1대1,2대2 수비"] }
 };
 
-// 🌟 토요일 항목 추가!
-const DAYS = ["월","화","수","목","금","토","경기"];
+// 🌟 요일 배열 순서 변경 완료 (경기 다음 토요일)
+const DAYS = ["월","화","수","목","금","경기","토"];
 const PALETTE = ["#F4C430","#F2994A","#EB5B2F","#E12F2F","#8B1E1E"];
 
 const avg = arr => !arr || !arr.length ? 0 : Math.round(arr.reduce((a,b)=>a+(b||0),0)/arr.length*10)/10;
@@ -689,7 +691,7 @@ function enterApp(){
   const av = document.getElementById('userAvatar');
   if (currentUser.photo) { av.src = currentUser.photo; av.style.display = 'inline-block'; } else av.style.display = 'none';
   
-  // 🌟 관리자 승인이 나지 않은 계정은 대기 화면으로 강제 이동
+  // 관리자 승인이 나지 않은 계정은 대기 화면으로 강제 이동
   if (!currentUser.granted && !currentUser.isAdmin) { showPendingScreen(); return; }
   
   document.getElementById('userLabel').innerText = `${currentUser.name} (${currentUser.role==='player'?'선수':'지도자'}${currentUser.isAdmin?' · 관리자':''})`;
@@ -871,6 +873,43 @@ function loadEntry(entryId){
     uiAlert('일지를 불러오는 중 에러가 발생했습니다: ' + err);
   });
 }
+
+// 🌟 선수 개인 성장 추이 보기 함수
+async function showGrowthChart() {
+  const res = await api({ action:'listEntries', playerId: currentPlayerId, type: currentType });
+  if(!res.ok || res.entries.length < 2) {
+    document.getElementById('growthModal').style.display = 'flex';
+    document.getElementById('growthCanvas').style.display = 'none';
+    document.getElementById('growthEmpty').style.display = 'block';
+    return;
+  }
+  const sorted = res.entries.sort((a,b)=>new Date(a.weekStartDate)-new Date(b.weekStartDate));
+  const labels = sorted.map(e => e.weekLabel || e.weekStartDate);
+  
+  // 🌟 선수 자가평가 기준으로 변경
+  const data = sorted.map(e => {
+    if(!e.playerScores) return 0;
+    return avg(e.playerScores);
+  });
+  
+  document.getElementById('growthModal').style.display = 'flex';
+  document.getElementById('growthCanvas').style.display = 'block';
+  document.getElementById('growthEmpty').style.display = 'none';
+  
+  if(growthChart) growthChart.destroy();
+  growthChart = new Chart(document.getElementById('growthCanvas'), {
+    type: 'line',
+    data: { 
+      labels, 
+      datasets: [{ label: '선수 자가평가 평균', data, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2 }] 
+    },
+    options: { responsive: true, scales: { y: { min: 0, max: 5 } }, plugins: { datalabels: { display: false } } }
+  });
+}
+function closeGrowthChart() {
+  document.getElementById('growthModal').style.display = 'none';
+}
+
 
 /* ---------- 선수 포토 일지 ---------- */
 function renderDiaryBody(){
@@ -1135,7 +1174,6 @@ async function renderCoachSidebar() {
 
     let adminHtml = '';
     if (currentUser.isAdmin) {
-      // 🌟 권한이 없는(대기 중인) 모든 사용자만 필터링하여 노출
       const pendingUsers = res.users.filter(u => u.granted === false && u.isAdmin === false);
       
       adminHtml = `
@@ -1366,7 +1404,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   const entry = byTypeCache.entries.find(e => e.entryId === entryId);
   if (entry) {
     currentEntry = JSON.parse(JSON.stringify(entry));
-    applySafeguards(); // 안전장치 
+    applySafeguards(); 
     expandedAccordionDay = null;
     renderJournal();   
   } else {
@@ -1421,6 +1459,7 @@ async function openDashboardDiary(playerId, playerName, targetDate) {
       calDate.setFullYear(d.getFullYear());
       calDate.setMonth(d.getMonth());
       renderCalendar();
+
       viewDiaryByDate(targetDate); 
 
       const recent7 = diaryListCache.slice(0, 7);
@@ -1565,7 +1604,7 @@ function renderPlayerAnalytics() {
   let playerAverages = {};
   filteredEntries.forEach(e => {
     if(!playerAverages[e.playerId]) playerAverages[e.playerId] = { sum:0, count:0 };
-    const avgScore = avg(e.playerScores); // 🌟 변경됨 (선수 점수)
+    const avgScore = avg(e.playerScores); 
     if(avgScore > 0) { playerAverages[e.playerId].sum += avgScore; playerAverages[e.playerId].count++; }
   });
   
@@ -1587,6 +1626,7 @@ function renderPlayerAnalytics() {
     percentileStr = '선수 평가 점수가 아직 입력되지 않았습니다.';
   }
 
+  // 🌟 텍스트 기준 (선수 자가평가 기준) 으로 교체
   document.getElementById('analyticsContent').innerHTML = `
       <div id="analyticsSummary" style="background:#fff5f5; border:1px solid #fca5a5; border-radius:8px; padding:16px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
         <div>
@@ -1603,7 +1643,7 @@ function renderPlayerAnalytics() {
           <div id="radarCaptureArea" style="background:white; padding:10px; border-radius:8px;"><canvas id="analyticsRadar"></canvas></div>
         </div>
         <div class="chart-box" style="width:500px; max-width:100%;">
-          <h4>주차별 성장 추이 (지도자 평가)</h4>
+          <h4>주차별 성장 추이 (선수 자가평가)</h4>
           <div id="lineCaptureArea" style="background:white; padding:10px; border-radius:8px;"><canvas id="analyticsLine"></canvas></div>
         </div>
       </div>
@@ -1616,7 +1656,7 @@ function renderPlayerAnalytics() {
     let compCatSums = cats.map(()=>0), compCatCounts = cats.map(()=>0);
     let teamCatSums = cats.map(()=>0), teamCatCounts = cats.map(()=>0);
 
-    // 🌟 레이더 차트 기준도 "선수 평가"로 통일 
+    // 🌟 레이더 차트 기준 "선수 평가"로 통일 
     baseEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { baseCatSums[i] += score; baseCatCounts[i]++; } }); });
     compareEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { compCatSums[i] += score; compCatCounts[i]++; } }); });
     filteredEntries.forEach(e => { e.playerScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } }); });
@@ -1639,15 +1679,16 @@ function renderPlayerAnalytics() {
     compareEntries.forEach(e => allDates.add(e.weekStartDate));
     const sortedDates = Array.from(allDates).sort((a,b) => new Date(a) - new Date(b));
 
-    const baseLineData = sortedDates.map(d => { const e = baseEntries.find(x => x.weekStartDate===d); return e ? avg(e.coachScores) : null; });
-    const compLineData = sortedDates.map(d => { const e = compareEntries.find(x => x.weekStartDate===d); return e ? avg(e.coachScores) : null; });
-    const pLineData = sortedDates.map(d => { const e = baseEntries.find(x => x.weekStartDate===d); return e ? avg(e.playerScores) : null; });
+    const baseLineData = sortedDates.map(d => { const e = baseEntries.find(x => x.weekStartDate===d); return e ? avg(e.playerScores) : null; });
+    const compLineData = sortedDates.map(d => { const e = compareEntries.find(x => x.weekStartDate===d); return e ? avg(e.playerScores) : null; });
+    const coachLineData = sortedDates.map(d => { const e = baseEntries.find(x => x.weekStartDate===d); return e ? avg(e.coachScores) : null; });
 
+    // 🌟 성장 추이 그래프 색상 및 굵은선 교체 (선수 점수 = 메인 빨간선)
     let lineDatasets = [
-      { label: `${baseName} (지도자 평가)`, data: baseLineData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2, spanGaps: true },
-      { label: `${baseName} (선수 자가평가)`, data: pLineData, borderColor: '#fca5a5', backgroundColor: '#fca5a5', borderDash: [3,3], tension: 0.2, spanGaps: true }
+      { label: `${baseName} (선수 자가평가)`, data: baseLineData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2, spanGaps: true },
+      { label: `${baseName} (지도자 평가)`, data: coachLineData, borderColor: '#fca5a5', backgroundColor: '#fca5a5', borderDash: [3,3], tension: 0.2, spanGaps: true }
     ];
-    if(comparePlayerId) lineDatasets.push({ label: `${compareName} (지도자 평가)`, data: compLineData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, spanGaps: true });
+    if(comparePlayerId) lineDatasets.push({ label: `${compareName} (선수 자가평가)`, data: compLineData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, spanGaps: true });
 
     if(analyticsLineChart) analyticsLineChart.destroy();
     analyticsLineChart = new Chart(document.getElementById('analyticsLine'), { type: 'line', data: { labels: sortedDates, datasets: lineDatasets }, options: { responsive: true, scales: { y: { min: 0, max: 5 } }, plugins: { datalabels: { display: false } } } });
@@ -1669,9 +1710,8 @@ function renderWeekAnalytics() {
   let overallSum = 0, overallCount = 0;
   let playerRankings = [];
 
-  // 🌟 주차별 분석 기준도 "선수 평가"로 변경
   entries.forEach(e => {
-    const scoreAvg = avg(e.playerScores); // 선수 기준 변경
+    const scoreAvg = avg(e.playerScores); 
     if(scoreAvg > 0) {
       overallSum += scoreAvg; overallCount++;
       playerRankings.push({ id: e.playerId, name: e.playerName, avg: scoreAvg });
@@ -1819,78 +1859,6 @@ function renderByTypeResults(type, week){
     </div>`;
 }
 
-/* ---------- 엑셀 백업 ---------- */
-async function exportExcel(){
-  loading(true, '전체 데이터를 수집 중입니다.<br>시간이 다소 소요될 수 있습니다...');
-  const res = await api({ action:'getAllData', requesterId: currentUser.id }, true);
-  if (!res.ok) { loading(false); await uiAlert(res.error, '오류'); return; }
-
-  const players = res.users.filter(u => u.role === 'player');
-
-  let allDiaries = [];
-  const diariesPromises = players.map(p => api({ action: 'listDiary', playerId: p.id }, true));
-  const diariesResponses = await Promise.all(diariesPromises);
-  players.forEach((p, idx) => {
-    if (diariesResponses[idx].ok) {
-      const dList = diariesResponses[idx].diary.map(d => ({ ...d, playerName: p.name }));
-      allDiaries = allDiaries.concat(dList);
-    }
-  });
-
-  const summary = res.entries.map(e => ({
-    '선수명': e.playerName,
-    '훈련 유형': (JOURNAL_TYPES[e.type]||{}).title || e.type,
-    '주차 라벨': e.weekLabel,
-    '시작일': e.weekStartDate,
-    '자가평가(평균)': avg(e.playerScores),
-    '지도자평가(평균)': avg(e.coachScores),
-    '선수 의견': e.playerComment || '',
-    '지도자 피드백': e.coachFeedback || '',
-    '업데이트 일시': e.updatedAt
-  }));
-
-  const detailed = res.entries.map(e => {
-    const cats = (JOURNAL_TYPES[e.type]||{}).categories || ['1','2','3','4','5'];
-    let row = {
-      '선수명': e.playerName,
-      '훈련 유형': (JOURNAL_TYPES[e.type]||{}).title || e.type,
-      '주차 라벨': e.weekLabel,
-      '시작일': e.weekStartDate
-    };
-    cats.forEach((c, i) => { row[`[자가평가] ${c}`] = e.playerScores ? e.playerScores[i] || 0 : 0; });
-    cats.forEach((c, i) => { row[`[지도자평가] ${c}`] = e.coachScores ? e.coachScores[i] || 0 : 0; });
-    DAYS.forEach(day => { cats.forEach((c, i) => { row[`[${day} 목적] ${c}`] = e.goals && e.goals[day] ? e.goals[day][i] || '' : ''; }); });
-    cats.forEach((c, i) => { row[`[영상] ${c}`] = e.videos && e.videos[i] ? e.videos[i].url || '' : ''; });
-    return row;
-  });
-
-  const diarySheetData = allDiaries.map(d => ({
-    '선수명': d.playerName,
-    '작성 날짜': String(d.date).split('T')[0],
-    '메모 내용': d.memo || '',
-    '사진 URL': d.photoUrl || '',
-    '시스템 등록일시': d.createdAt || ''
-  }));
-
-  const users = res.users.map(u => ({
-    '이름': u.name,
-    '아이디(이메일)': u.id,
-    '계정 역할': u.role === 'player' ? '선수' : '지도자',
-    '전체조회 권한': u.granted ? 'O' : 'X',
-    '관리자 여부': u.isAdmin ? 'O' : 'X'
-  }));
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "주기화 요약");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailed), "주기화 세부 데이터(전체)");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(diarySheetData), "포토 일지 통합");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(users), "사용자 목록");
-
-  XLSX.writeFile(wb, `FC_SEOUL_전체데이터_백업_${dateStr(new Date())}.xlsx`);
-  loading(false);
-  uiToast('엑셀 파일(전체 통합본)이 다운로드되었습니다.');
-}
-
 /* ---------- Kuatiahaipyre (Journal rendering) ---------- */
 function renderJournal(){
   hidePanels(); document.getElementById('journalWrapper').style.display = 'block';
@@ -2001,7 +1969,7 @@ async function uploadVideo(el){
   reader.readAsDataURL(file);
 }
 
-// 🌟 차트 플러그인(datalabels) 적용
+// 🌟 차트 플러그인 설정 및 퍼센트 표기 적용
 function drawPies(cats){
   const pSum = currentEntry.playerScores.reduce((a,b)=>a+b,0) || 1;
   const cSum = currentEntry.coachScores.reduce((a,b)=>a+b,0) || 1;
@@ -2016,12 +1984,11 @@ function drawPies(cats){
     plugins: { 
       legend: { display: false }, 
       tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + '%' } },
-      // 🌟 데이터 라벨(숫자) 기본 표시
       datalabels: {
         color: '#ffffff',
         font: { weight: 'bold', size: 11 },
         formatter: (value) => {
-          return value > 0 ? value + '%' : ''; // 0%인 조각은 숨김
+          return value > 0 ? value + '%' : '';
         }
       }
     } 
