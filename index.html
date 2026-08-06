@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>FC SEOUL TRAINING LOG</title>
+<title>FC SEOUL TRAINING LOG U13</title>
 
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -92,7 +92,7 @@ td.goal-cell{ background:var(--salmon); }
 tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:first-child, tr.video-row td:first-child{ background:#f1f5f9; font-weight:bold; text-align:center; color: var(--black); }
 .goal-cell textarea{ width:100%; border:none; background:transparent; resize:none; font-size:11px; font-family:inherit; min-height:38px; outline: none; display:block; margin-bottom:4px; }
 
-/* 🌟 요일별 시도/성공 입력칸 스타일 */
+/* 요일별 시도/성공 입력칸 스타일 */
 .daily-stats-row { display:flex; gap:4px; border-top:1px dashed #cbd5e1; padding-top:4px; }
 .daily-stat { flex:1; display:flex; align-items:center; border:1px solid #cbd5e1; border-radius:4px; overflow:hidden; }
 .daily-stat span { font-size:9.5px; font-weight:bold; padding:2px 4px; display:inline-block; }
@@ -160,7 +160,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 .pdf-header { text-align: center; border-bottom: 4px solid var(--red); padding-bottom: 10px; margin-bottom: 20px; }
 .pdf-header h1 { margin: 0; font-size: 24px; font-weight: 900; }
 .analytics-tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px; }
-.analytics-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; background: transparent; cursor: pointer; color: #64748b; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+.analytics-tabs button { flex: 1; padding: 12px; font-size: 14px; font-weight: bold; border: none; background: transparent; cursor: pointer; color: #64748b; border-bottom: 3px transparent; margin-bottom: -2px; transition: all 0.2s; }
 .analytics-tabs button:hover { color: var(--black); }
 .analytics-tabs button.active { color: var(--red); border-bottom-color: var(--red); }
 
@@ -234,7 +234,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 <div id="loginScreen">
   <div class="login-card">
     <div class="login-head">
-      <h1>FC SEOUL <span style="color:var(--red)">TRAINING LOG</span></h1>
+      <h1>FC SEOUL <span style="color:var(--red)">TRAINING LOG U13</span></h1>
       <p>선수 개인 훈련일지 (드리블 · 패스 · 터치 주기화 · 포토 일지)</p>
     </div>
     <div class="login-body">
@@ -302,7 +302,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 <!-- 메인 앱 스크린 -->
 <div id="appScreen">
   <div class="topbar">
-    <div class="brand">FC SEOUL <span>TRAINING LOG</span></div>
+    <div class="brand">FC SEOUL <span>TRAINING LOG U13</span></div>
     <div class="userinfo">
       <img id="userAvatar" src="" style="width:26px; height:26px; border-radius:50%; object-fit:cover; display:none;">
       <span id="userLabel"></span>
@@ -359,7 +359,7 @@ Chart.register(ChartDataLabels);
 
 const DEFAULT_BACKEND_URL = "https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec";
 
-// 🌟 항목 앞에 숫자(1~5) 추가 완료
+// 🌟 항목 앞에 숫자(1~5) 추가
 const JOURNAL_TYPES = {
   dribble: { title: "드리블 주기화", categories: ["1. 상황인지 + 속도변화 (소유)","2. 볼소유를 위한 드리블 (소유)","3. 도전적인 드리블 + 슈팅 (전진)","4. 전진적인 드리블 + 득점 (전진)","5. 2대2, 3대2 수비"] },
   pass:    { title: "패스 주기화",   categories: ["1. 상황인지 후 패스 연결","2. 볼 소유를 위한 패스선택","3. 공격적인 패스선택,움직임 (전진)","4. 전진하기 위한 도전적인 패스,움직임(전진)","5. 공수전환 시도 & 협력수비"] },
@@ -420,8 +420,7 @@ function applySafeguards() {
   
   if (!currentEntry.goals || typeof currentEntry.goals !== 'object') currentEntry.goals = {};
   
-  // 🌟 백엔드 수정 없이 시도/성공 횟수를 저장하기 위해 
-  // 기존 일일별 데이터 구조 안에 dailyAttempts와 dailySuccesses를 신설합니다.
+  // 🌟 시도/성공 횟수를 저장하기 위해 데이터 구조 신설
   if (!currentEntry.dailyAttempts) currentEntry.dailyAttempts = {};
   if (!currentEntry.dailySuccesses) currentEntry.dailySuccesses = {};
 
@@ -431,7 +430,7 @@ function applySafeguards() {
     if (!Array.isArray(currentEntry.dailySuccesses[d])) currentEntry.dailySuccesses[d] = cats.map(()=>0);
   });
   
-  // 하단 요약용 데이터 (이건 시스템에서 자동으로 계산해서 덮어씌웁니다)
+  // 하단 요약용 데이터
   if (!Array.isArray(currentEntry.playerScores)) currentEntry.playerScores = cats.map(()=>0);
   if (!Array.isArray(currentEntry.coachScores)) currentEntry.coachScores = cats.map(()=>0);
   
@@ -442,7 +441,7 @@ function applySafeguards() {
   currentEntry.coachFeedback = currentEntry.coachFeedback || '';
 }
 
-// 🌟 매일 입력한 시도/성공 횟수를 종합하여 하단의 평균 점수를 업데이트하는 핵심 함수
+// 🌟 매일 입력한 횟수를 종합하여 하단의 평균 점수를 배경에서 계산하는 함수
 function calculateAverages() {
   const cats = JOURNAL_TYPES[currentEntry.type].categories;
   cats.forEach((c, ci) => {
@@ -450,16 +449,23 @@ function calculateAverages() {
     DAYS.forEach(d => {
       const att = currentEntry.dailyAttempts[d][ci] || 0;
       const suc = currentEntry.dailySuccesses[d][ci] || 0;
-      // 시도나 성공, 혹은 텍스트 목표 중 하나라도 적은 요일만 카운트합니다.
+      // 시도나 성공, 혹은 텍스트 목표 중 하나라도 적은 요일만 카운트
       if (att > 0 || suc > 0 || currentEntry.goals[d][ci].trim() !== '') {
         attSum += att;
         sucSum += suc;
         activeDays++;
       }
     });
-    // 평균값을 구해서 기존 playerScores(시도)와 coachScores(성공) 배열에 저장 (백엔드 호환 유지)
+    // 평균값을 구해서 데이터에 반영
     currentEntry.playerScores[ci] = activeDays ? Math.round((attSum / activeDays) * 10) / 10 : 0;
     currentEntry.coachScores[ci] = activeDays ? Math.round((sucSum / activeDays) * 10) / 10 : 0;
+    
+    // 🌟 화면이 다시 그려지지 않도록 DOM의 글자(텍스트)만 바꿔치기
+    const attEl = document.getElementById(`avg-att-${ci}`);
+    if(attEl) attEl.innerText = `${currentEntry.playerScores[ci]}회`;
+    
+    const sucEl = document.getElementById(`avg-suc-${ci}`);
+    if(sucEl) sucEl.innerText = `${currentEntry.coachScores[ci]}회`;
   });
 }
 
@@ -1751,7 +1757,6 @@ function renderPlayerAnalytics() {
   }, 50);
 }
 
-// 🌟 주차별 팀 분석: X/Y 산점도 (Scatter Chart) 렌더링 🌟
 function renderWeekAnalytics() {
   const type = document.getElementById('analyticsWeekType').value;
   const week = document.getElementById('analyticsWeekSelect').value;
@@ -1763,7 +1768,6 @@ function renderWeekAnalytics() {
   let teamAttSums = 0, teamSucSums = 0;
   let overallCount = entries.length;
   
-  // 🌟 산점도 차트 데이터 조립
   const scatterData = entries.map(e => {
     const attAvg = avg(e.playerScores);
     const sucAvg = avg(e.coachScores);
@@ -1789,7 +1793,7 @@ function renderWeekAnalytics() {
         <div style="background:white; padding:20px; border: 1px solid #cbd5e1; border-radius:8px;">
           <canvas id="analyticsScatter"></canvas>
         </div>
-        <div style="font-size:11px; color:#64748b; margin-top:10px;">* 각 점령은 선수를 나타냅니다. (우측 상단으로 갈수록 시도와 성공이 모두 높습니다)</div>
+        <div style="font-size:11px; color:#64748b; margin-top:10px;">* 각 점은 선수를 나타냅니다. (우측 상단으로 갈수록 시도와 성공이 모두 높습니다)</div>
       </div>
     </div>
   `;
@@ -1798,8 +1802,8 @@ function renderWeekAnalytics() {
 
   setTimeout(() => {
     if(analyticsLineChart) analyticsLineChart.destroy();
+    if(analyticsRadarChart) analyticsRadarChart.destroy(); // 방해 안되게 파괴
     
-    // 🌟 분산형(Scatter) 차트 세팅
     analyticsLineChart = new Chart(document.getElementById('analyticsScatter'), {
       type: 'scatter',
       data: {
@@ -1824,7 +1828,6 @@ function renderWeekAnalytics() {
               }
             }
           },
-          // 점 바로 위에 선수 이름 표시 플러그인 설정
           datalabels: {
             display: true,
             color: '#1a1a1a',
@@ -1938,7 +1941,7 @@ function renderByTypeResults(type, week){
       <div style="flex:1; min-width:220px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
         ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')">
           <span>${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
-          <span style="font-size:10px; color:#64748b;">평균 시도 ${avg(s.entry.playerScores)} / 성공 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
+          <span style="font-size:10px; color:#64748b;">시도 ${avg(s.entry.playerScores)} / 성공 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
       <div style="flex:1; min-width:220px;"><h4 style="color:#ef4444;">⚠ 미제출 (${missing.length})</h4>
         ${missing.length ? missing.map(p=>`<div class="list-item" style="opacity:.55;"><span>${p.photo?`<img src="${p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
     </div>`;
@@ -1982,13 +1985,9 @@ async function exportExcel(){
       '바퀴 라벨': e.weekLabel,
       '시작일': e.weekStartDate
     };
-    DAYS.forEach(day => {
-      cats.forEach((c, i) => { 
-        row[`[${day} 목적] ${c}`] = e.goals && e.goals[day] ? e.goals[day][i] || '' : ''; 
-        row[`[${day} 시도] ${c}`] = e.dailyAttempts && e.dailyAttempts[day] ? e.dailyAttempts[day][i] || 0 : 0; 
-        row[`[${day} 성공] ${c}`] = e.dailySuccesses && e.dailySuccesses[day] ? e.dailySuccesses[day][i] || 0 : 0; 
-      }); 
-    });
+    cats.forEach((c, i) => { row[`[시도 횟수] ${c}`] = e.playerScores ? e.playerScores[i] || 0 : 0; });
+    cats.forEach((c, i) => { row[`[성공 횟수] ${c}`] = e.coachScores ? e.coachScores[i] || 0 : 0; });
+    DAYS.forEach(day => { cats.forEach((c, i) => { row[`[${day} 목적] ${c}`] = e.goals && e.goals[day] ? e.goals[day][i] || '' : ''; }); });
     cats.forEach((c, i) => { row[`[선수 질문] ${c}`] = e.playerQuestions && e.playerQuestions[i] ? e.playerQuestions[i] : ''; });
     cats.forEach((c, i) => { row[`[영상] ${c}`] = e.videos && e.videos[i] ? e.videos[i].url || '' : ''; });
     return row;
@@ -2019,186 +2018,6 @@ async function exportExcel(){
   XLSX.writeFile(wb, `FC_SEOUL_전체데이터_백업_${dateStr(new Date())}.xlsx`);
   loading(false);
   uiToast('엑셀 파일(전체 통합본)이 다운로드되었습니다.');
-}
-
-/* ---------- 🌟 Kuatiahaipyre (Journal rendering) 🌟 ---------- */
-function renderJournal(){
-  hidePanels(); document.getElementById('journalWrapper').style.display = 'block';
-  const isPlayer = currentUser.role === 'player', isCoach = currentUser.role === 'coach';
-  const cats = JOURNAL_TYPES[currentEntry.type].categories;
-
-  document.getElementById('journalActionsRow').innerHTML = `
-    ${isCoach ? `<button style="background:#0284c7" onclick="exportPNG()"><i class="fa fa-image"></i> PNG 저장</button>
-    <button style="background:var(--black)" onclick="window.print()"><i class="fa fa-print"></i> PDF 저장</button>` : ''}
-    <button style="background:#16a34a" onclick="saveEntry()"><i class="fa fa-save"></i> 수동 저장</button>`;
-
-  const photo = isPlayer ? (currentUser.photo||'') : ((playersInfo[currentPlayerId]||{}).photo||'');
-  let html = `<div class="j-title">${photo?`<img src="${photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;border:2px solid var(--gold);">`:''}${JOURNAL_TYPES[currentEntry.type].title} — ${currentEntry.playerName||''}</div>`;
-  html += `<div class="j-meta">${currentEntry.weekLabel||''} · 시작일: ${currentEntry.weekStartDate}</div>`;
-  
-  html += `<div class="table-responsive"><table class="j-table"><thead><tr><th>선수,지도자 (${currentEntry.weekLabel||''})</th>${cats.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
-
-  // 🌟 요일별 셀 내부에 목표 + 시도/성공 횟수 직접 입력창 렌더링
-  DAYS.forEach(d => {
-    const isExpanded = expandedAccordionDay === d ? 'acc-expanded' : '';
-    html += `<tr class="goal-row ${isExpanded}"><td data-label="구분" onclick="toggleMobileAccordion(this, '${d}')">개인 목적 (${d}) <i class="fa fa-chevron-down acc-icon"></i></td>`;
-    cats.forEach((c, ci) => {
-      const val = (currentEntry.goals[d]||[])[ci] || '';
-      const att = (currentEntry.dailyAttempts[d]||[])[ci] || 0;
-      const suc = (currentEntry.dailySuccesses[d]||[])[ci] || 0;
-      
-      html += `<td class="goal-cell" data-label="${c}">
-        <textarea data-day="${d}" data-ci="${ci}" onkeyup="updateGoalLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 목표 작성">${esc(val)}</textarea>
-        <div class="daily-stats-row">
-          <div class="daily-stat att"><span>시도</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${att}" onchange="updateDailyStatLocal(this, 'att')" onkeyup="updateDailyStatLocal(this, 'att')" ${isPlayer?'':'disabled'}></div>
-          <div class="daily-stat suc"><span>성공</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${suc}" onchange="updateDailyStatLocal(this, 'suc')" onkeyup="updateDailyStatLocal(this, 'suc')" ${isPlayer?'':'disabled'}></div>
-        </div>
-      </td>`;
-    });
-    html += `</tr>`;
-  });
-
-  // 🌟 하단에는 입력창 대신 '평균'을 보여주기 (읽기 전용)
-  html += `<tr class="score-row"><td data-label="구분">평균 시도 횟수<div class="eval-helper">[입력된 날짜 기준 평균값]</div></td>${cats.map((c,ci)=>`<td data-label="${c}" style="text-align:center; font-size:16px; font-weight:bold; color:#ef4444; background:#fef2f2;">${currentEntry.playerScores[ci]||0}회</td>`).join('')}</tr>`;
-  html += `<tr class="score-row"><td data-label="구분">평균 성공 횟수<div class="eval-helper">[입력된 날짜 기준 평균값]</div></td>${cats.map((c,ci)=>`<td data-label="${c}" style="text-align:center; font-size:16px; font-weight:bold; color:#0284c7; background:#f0f9ff;">${currentEntry.coachScores[ci]||0}회</td>`).join('')}</tr>`;
-  
-  html += `<tr class="question-row"><td data-label="구분">주제별 선수 질문사항</td>${cats.map((c,ci)=>`<td data-label="${c}"><textarea data-ci="${ci}" onkeyup="updatePlayerQuestionLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 질문 작성" style="width:100%; border:1px solid #cbd5e1; border-radius:4px; padding:6px; font-size:11px; resize:vertical; min-height:50px; background:#f8fafc;">${esc((currentEntry.playerQuestions||[])[ci]||'')}</textarea></td>`).join('')}</tr>`;
-
-  html += `<tr class="video-row"><td data-label="구분">영상 업로드</td>`;
-  cats.forEach((c, ci) => {
-    const v = currentEntry.videos[ci] || {url:''};
-    html += `<td data-label="${c}"><div class="video-cell">
-      <input type="text" placeholder="링크 붙여넣기" value="${esc(v.url||'')}" data-ci="${ci}" onkeyup="updateVideoLocal(this)" onblur="scheduleAutoSave()">
-      <div style="display:flex; gap:4px; align-items:center;">
-        <button onclick="document.getElementById('vf${ci}').click()"><i class="fa fa-upload"></i> 파일 업로드</button>
-        <input type="file" id="vf${ci}" accept="video/mp4,video/quicktime" style="display:none" data-ci="${ci}" onchange="uploadVideo(this)">
-      </div>
-      ${v.url ? `<a href="${v.url}" target="_blank">▶ 영상보기</a>` : ''}
-    </div></td>`;
-  });
-  html += `</tr></tbody></table></div>`;
-
-  html += `<div class="legend-row">${cats.map((c,i)=>`<div><span class="dot" style="background:${PALETTE[i]}"></span>${c}</div>`).join('')}</div>`;
-  
-  html += `<div class="charts-row">
-    <div class="chart-box"><h4>주제별 시도 비율</h4><canvas id="playerPie"></canvas></div>
-    <div class="chart-box"><h4>주제별 성공 비율</h4><canvas id="coachPie"></canvas></div>
-  </div>`;
-
-  html += `<div class="note-box" style="background:#fff8f5; border-color:var(--red);">
-    <div style="font-size:12.5px; font-weight:900; color:var(--red); margin-bottom:6px;">✏️ 선수 의견 / 생각</div>
-    <textarea rows="3" onkeyup="updatePlayerCommentLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="이번 주 느낀 점, 다음 목표 등을 적어보세요.">${esc(currentEntry.playerComment)}</textarea></div>`;
-  html += `<div class="note-box" style="background:#f8fafc; border-color:var(--gold);">
-    <div style="font-size:12.5px; font-weight:900; margin-bottom:6px;">🗣 지도자 피드백 (종합)</div>
-    <textarea rows="3" onkeyup="updateCoachFeedbackLocal(this)" onblur="scheduleAutoSave()" ${isCoach?'':'disabled'} placeholder="선수의 질문에 대한 답변과 피드백을 적어주세요.">${esc(currentEntry.coachFeedback)}</textarea></div>`;
-
-  document.getElementById('journalCard').innerHTML = html;
-  drawPies(cats);
-}
-
-// 🌟 요일별로 입력하면 자동으로 전체 평균이 다시 계산되는 로직
-function updateDailyStatLocal(el, type) {
-  const day = el.dataset.day;
-  const ci = parseInt(el.dataset.ci);
-  const val = parseInt(el.value) || 0;
-  
-  if (type === 'att') currentEntry.dailyAttempts[day][ci] = val;
-  else currentEntry.dailySuccesses[day][ci] = val;
-  
-  calculateAverages();
-  renderJournal(); // 즉시 화면 재렌더링
-  scheduleAutoSave();
-}
-
-function updateGoalLocal(el){ currentEntry.goals[el.dataset.day][parseInt(el.dataset.ci)] = el.value; calculateAverages(); scheduleAutoSave(); }
-function updatePlayerQuestionLocal(el){ currentEntry.playerQuestions[parseInt(el.dataset.ci)] = el.value; }
-function updateVideoLocal(el){ currentEntry.videos[parseInt(el.dataset.ci)] = { url: el.value }; }
-function updatePlayerCommentLocal(el){ currentEntry.playerComment = el.value; }
-function updateCoachFeedbackLocal(el){ currentEntry.coachFeedback = el.value; }
-
-function toggleMobileAccordion(el, day) {
-  if (window.innerWidth > 820) return; 
-  const tr = el.closest('tr');
-  if (tr.classList.contains('acc-expanded')) {
-    tr.classList.remove('acc-expanded');
-    expandedAccordionDay = null; 
-  } else {
-    document.querySelectorAll('.goal-row').forEach(row => row.classList.remove('acc-expanded'));
-    tr.classList.add('acc-expanded');
-    expandedAccordionDay = day; 
-  }
-}
-
-async function uploadVideo(el){
-  const file = el.files[0]; if (!file) return;
-  if (file.size > 25*1024*1024) await uiAlert('25MB 초과 파일은 업로드가 원활하지 않을 수 있어요.', '주의');
-  const ci = parseInt(el.dataset.ci);
-  const reader = new FileReader();
-  reader.onload = async ev => {
-    loading(true, '대용량 영상/파일을 업로드하는 중입니다.<br>창을 닫지 마세요...');
-    const res = await api({ action:'uploadFile', base64: ev.target.result, filename: file.name, mimeType: file.type }, true);
-    loading(false);
-    if (res.ok) { currentEntry.videos[ci] = { url: res.viewUrl }; renderJournal(); uiToast('업로드 완료!'); }
-    else await uiAlert('업로드 실패: ' + res.error, '오류');
-  };
-  reader.readAsDataURL(file);
-}
-
-// 🌟 차트 플러그인(숫자 라벨)을 포함한 2개(시도/성공) 차트 렌더링
-function drawPies(cats){
-  const pSum = currentEntry.playerScores.reduce((a,b)=>a+b,0) || 1;
-  const cSum = currentEntry.coachScores.reduce((a,b)=>a+b,0) || 1;
-  const pData = currentEntry.playerScores.map(v=> Math.round(v/pSum*1000)/10);
-  const cData = currentEntry.coachScores.map(v=> Math.round(v/cSum*1000)/10);
-  
-  if (playerChart) playerChart.destroy();
-  if (coachChart) coachChart.destroy();
-  
-  const opts = { 
-    responsive: true, 
-    plugins: { 
-      legend: { display: false }, 
-      tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + '%' } },
-      datalabels: {
-        color: '#ffffff',
-        font: { weight: 'bold', size: 14 },
-        formatter: (value) => { return value > 0 ? value + '%' : ''; }
-      }
-    } 
-  };
-  
-  playerChart = new Chart(document.getElementById('playerPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:pData, backgroundColor:PALETTE }] }, options:opts });
-  coachChart = new Chart(document.getElementById('coachPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:cData, backgroundColor:PALETTE }] }, options:opts });
-}
-
-async function saveEntry(){
-  if (!currentEntry) return;
-  loading(true, '일지를 저장 중입니다...');
-  const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-  loading(false);
-  if (res.ok) { currentEntry.entryId = res.entryId; uiToast('저장되었습니다.'); loadArchive(); }
-  else await uiAlert('저장 실패: ' + res.error, '오류');
-}
-
-function scheduleAutoSave(){
-  if (!currentEntry) return;
-  clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(async () => {
-    autoSaveTimer = null; 
-    const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-    if (res.ok) { currentEntry.entryId = res.entryId; uiToast('자동저장되었습니다.'); }
-  }, 2000);
-}
-
-async function exportPNG(){
-  const originalScrollY = window.scrollY;
-  window.scrollTo(0, 0);
-  const canvas = await html2canvas(document.getElementById('journalCard'), { scale:2, useCORS:true, backgroundColor:'#ffffff', scrollY: 0 });
-  window.scrollTo(0, originalScrollY);
-  
-  const a = document.createElement('a');
-  a.href = canvas.toDataURL('image/png'); a.download = `훈련일지_${currentEntry.playerName}_${currentEntry.weekStartDate}.png`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 </script>
 </body>
