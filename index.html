@@ -219,6 +219,9 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   tr.goal-row.acc-expanded .acc-icon { transform: rotate(180deg); margin-top: 10px; padding-left: 0; }
 
   .goal-cell textarea, .question-row textarea { min-height: 70px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; background: #f8fafc; font-size: 13px; margin-top: 4px; width: 100%; box-sizing: border-box;}
+  .tap-row { justify-content: flex-start; gap: 4px; }
+  .tap-btn { width: 30px; height: 30px; font-size: 12px; }
+  .tap-val { font-size: 14px; margin-left: 8px; }
   .video-cell input { padding: 8px; font-size: 12px; margin-bottom: 6px; width: 100%; box-sizing: border-box;}
   .video-cell button { padding: 8px; font-size: 11px; }
   .chart-box{ width:100%; margin-bottom: 24px; box-sizing: border-box;}
@@ -235,7 +238,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   <div class="login-card">
     <div class="login-head">
       <h1>FC SEOUL <span style="color:var(--red)">TRAINING LOG U13</span></h1>
-      <p>선수 개인 훈련일지 (드리블 · 패스 · 터치 주기화 · 포토 일지)</p>
+      <p>선수 개인 훈련일지 (패스 · 터치 · 드리블 주기화 · 포토 일지)</p>
     </div>
     <div class="login-body">
       <div class="cfg-box" id="backendConfigBox">
@@ -359,11 +362,11 @@ Chart.register(ChartDataLabels);
 
 const DEFAULT_BACKEND_URL = "https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec";
 
-// 🌟 항목 앞에 숫자(1~5) 추가
+// 🌟 항목 앞에 숫자(1~5) 추가 및 주기화 순서 변경 (패스 -> 터치 -> 드리블)
 const JOURNAL_TYPES = {
-  dribble: { title: "드리블 주기화", categories: ["1. 상황인지 + 속도변화 (소유)","2. 볼소유를 위한 드리블 (소유)","3. 도전적인 드리블 + 슈팅 (전진)","4. 전진적인 드리블 + 득점 (전진)","5. 2대2, 3대2 수비"] },
   pass:    { title: "패스 주기화",   categories: ["1. 상황인지 후 패스 연결","2. 볼 소유를 위한 패스선택","3. 공격적인 패스선택,움직임 (전진)","4. 전진하기 위한 도전적인 패스,움직임(전진)","5. 공수전환 시도 & 협력수비"] },
-  touch:   { title: "터치 주기화",   categories: ["1. 목적이 있는 터치 (공간,수비위치) 넓이","2. 상황인지 볼소유를 위한 (소유) 터치","3. 터치의 방향성 (공격적) (전진)","4. 득점을 위한 터치 (터치)","5. 1대1,2대2 수비"] }
+  touch:   { title: "터치 주기화",   categories: ["1. 목적이 있는 터치 (공간,수비위치) 넓이","2. 상황인지 볼소유를 위한 (소유) 터치","3. 터치의 방향성 (공격적) (전진)","4. 득점을 위한 터치 (터치)","5. 1대1,2대2 수비"] },
+  dribble: { title: "드리블 주기화", categories: ["1. 상황인지 + 속도변화 (소유)","2. 볼소유를 위한 드리블 (소유)","3. 도전적인 드리블 + 슈팅 (전진)","4. 전진적인 드리블 + 득점 (전진)","5. 2대2, 3대2 수비"] }
 };
 
 // 🌟 요일 배열 순서 변경 (경기 다음 토요일)
@@ -399,7 +402,8 @@ const dateStr = d => {
 const monday = d => { const dt=new Date(d); const day=dt.getDay(); dt.setDate(dt.getDate()-day+(day===0?-6:1)); dt.setHours(0,0,0,0); return dt; };
 const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-let currentUser = null, currentType = "dribble", currentEntry = null;
+// 🌟 Default type을 pass로 변경
+let currentUser = null, currentType = "pass", currentEntry = null;
 let currentPlayerId = null, currentPlayerName = null, sidebarMode = "cycle";
 let regPhotoData = "", pendingDiaryPhoto = null;
 let playersInfo = {}, diaryListCache = [], byTypeCache = null;
@@ -410,27 +414,29 @@ let analyticsMode = 'player';
 let calDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1); 
 let expandedAccordionDay = null;
 
-// 🌟 데이터 누락 방지 안전장치
+// 🌟 데이터 누락 방지 및 요일별 휴식/부상 상태(dayStatus) 저장소 추가
 function applySafeguards() {
   if (!currentEntry) return;
   if (!currentEntry.type || !JOURNAL_TYPES[currentEntry.type]) {
-    currentEntry.type = 'dribble';
+    currentEntry.type = 'pass';
   }
   const cats = JOURNAL_TYPES[currentEntry.type].categories;
   
   if (!currentEntry.goals || typeof currentEntry.goals !== 'object') currentEntry.goals = {};
   
-  // 🌟 시도/성공 횟수를 저장하기 위해 데이터 구조 신설
+  // 시도/성공/상태 횟수를 저장하기 위해 데이터 구조 신설
   if (!currentEntry.dailyAttempts) currentEntry.dailyAttempts = {};
   if (!currentEntry.dailySuccesses) currentEntry.dailySuccesses = {};
+  if (!currentEntry.dayStatus) currentEntry.dayStatus = {}; // 🌟 휴식/부상 상태 저장용
 
   DAYS.forEach(d => {
     if (!Array.isArray(currentEntry.goals[d])) currentEntry.goals[d] = cats.map(()=>'');
     if (!Array.isArray(currentEntry.dailyAttempts[d])) currentEntry.dailyAttempts[d] = cats.map(()=>0);
     if (!Array.isArray(currentEntry.dailySuccesses[d])) currentEntry.dailySuccesses[d] = cats.map(()=>0);
+    if (!currentEntry.dayStatus[d]) currentEntry.dayStatus[d] = 'normal'; // 기본값 'normal'
   });
   
-  // 하단 요약용 데이터
+  // 하단 요약용 데이터 (기존 점수칸 재활용)
   if (!Array.isArray(currentEntry.playerScores)) currentEntry.playerScores = cats.map(()=>0);
   if (!Array.isArray(currentEntry.coachScores)) currentEntry.coachScores = cats.map(()=>0);
   
@@ -441,26 +447,31 @@ function applySafeguards() {
   currentEntry.coachFeedback = currentEntry.coachFeedback || '';
 }
 
-// 🌟 매일 입력한 횟수를 종합하여 하단의 평균 점수를 배경에서 계산하는 함수
+// 🌟 휴식, 부상을 제외하고 평균을 계산하는 핵심 함수
 function calculateAverages() {
   const cats = JOURNAL_TYPES[currentEntry.type].categories;
   cats.forEach((c, ci) => {
     let attSum = 0, sucSum = 0, activeDays = 0;
+    
     DAYS.forEach(d => {
+      const status = currentEntry.dayStatus[d] || 'normal';
+      if (status === 'rest' || status === 'injury') return; // 🌟 휴식/부상이면 평균 계산에서 제외!
+
       const att = currentEntry.dailyAttempts[d][ci] || 0;
       const suc = currentEntry.dailySuccesses[d][ci] || 0;
-      // 시도나 성공, 혹은 텍스트 목표 중 하나라도 적은 요일만 카운트
+      
       if (att > 0 || suc > 0 || currentEntry.goals[d][ci].trim() !== '') {
         attSum += att;
         sucSum += suc;
         activeDays++;
       }
     });
+    
     // 평균값을 구해서 데이터에 반영
     currentEntry.playerScores[ci] = activeDays ? Math.round((attSum / activeDays) * 10) / 10 : 0;
     currentEntry.coachScores[ci] = activeDays ? Math.round((sucSum / activeDays) * 10) / 10 : 0;
     
-    // 🌟 화면이 다시 그려지지 않도록 DOM의 글자(텍스트)만 바꿔치기
+    // 🌟 화면 튕김(키보드 닫힘)을 막기 위해 DOM 직접 업데이트
     const attEl = document.getElementById(`avg-att-${ci}`);
     if(attEl) attEl.innerText = `${currentEntry.playerScores[ci]}회`;
     
@@ -734,6 +745,7 @@ function enterApp(){
   const av = document.getElementById('userAvatar');
   if (currentUser.photo) { av.src = currentUser.photo; av.style.display = 'inline-block'; } else av.style.display = 'none';
   
+  // 🌟 관리자 승인이 나지 않은 계정은 대기 화면으로 강제 이동
   if (!currentUser.granted && !currentUser.isAdmin) { showPendingScreen(); return; }
   
   document.getElementById('userLabel').innerText = `${currentUser.name} (${currentUser.role==='player'?'선수':'지도자'}${currentUser.isAdmin?' · 관리자':''})`;
@@ -750,14 +762,37 @@ function enterApp(){
   }
 }
 
+// 🌟 승인 상태 새로고침 기능 추가
+async function checkApprovalStatus() {
+  loading(true, '승인 상태를 확인 중입니다...');
+  const res = await api({ action: 'listUsers' }, true);
+  loading(false);
+  if(res.ok) {
+    const me = res.users.find(u => u.id === currentUser.id);
+    if(me && (me.granted || me.isAdmin)) {
+      currentUser = me;
+      localStorage.setItem('tj_user', JSON.stringify(currentUser));
+      uiToast('승인이 확인되었습니다! 환영합니다.');
+      enterApp(); 
+    } else {
+      uiToast('아직 승인 대기 중입니다. 관리자에게 문의해주세요.', 'info');
+    }
+  } else {
+    uiToast('확인 중 오류가 발생했습니다.', 'error');
+  }
+}
+
 function showPendingScreen(){
   document.getElementById('userLabel').innerText = `${currentUser.name} (승인 대기 중)`;
   document.getElementById('sidebar').innerHTML = '';
   hidePanels();
   document.getElementById('mainArea').innerHTML = `
-    <div class="empty" style="color:white; display:block;">
+    <div class="empty" style="color:white; display:block; padding-top:40px;">
       <i class="fa fa-hourglass-half" style="font-size:28px; margin-bottom:10px; display:block;"></i>
       최고 관리자가 아직 승인하지 않았어요.<br>관리자에게 가입 승인을 요청해주세요.
+      <br><br>
+      <button class="btn btn-red" style="margin: 20px auto 10px; width:auto; padding:10px 20px;" onclick="checkApprovalStatus()">🔄 승인 상태 새로고침</button>
+      <button class="btn btn-outline" style="margin: 0 auto; width:auto; padding:10px 20px;" onclick="logout()">로그아웃</button>
     </div>`;
 }
 
@@ -773,9 +808,10 @@ function showEmpty(){
   document.getElementById('emptyMsg').style.display='block'; 
 }
 
+// 🌟 선택 드롭다운 순서 변경 (패스 -> 터치 -> 드리블)
 function typeSelectHtml(id = 'typeSelect', onchangeStr = 'onTypeChange()'){
   return `<select id="${id}" onchange="${onchangeStr}">
-    <option value="dribble">드리블 주기화</option><option value="pass">패스 주기화</option><option value="touch">터치 주기화</option>
+    <option value="pass">패스 주기화</option><option value="touch">터치 주기화</option><option value="dribble">드리블 주기화</option>
   </select>`;
 }
 
@@ -890,12 +926,13 @@ async function createEntry(){
     weekStartDate: dateVal, weekLabel: label, goals: {},
     playerScores: cats.map(()=>0), coachScores: cats.map(()=>0), playerQuestions: cats.map(()=>''),
     videos: cats.map(()=>({url:'',name:''})), playerComment:'', coachFeedback:'',
-    dailyAttempts: {}, dailySuccesses: {}
+    dailyAttempts: {}, dailySuccesses: {}, dayStatus: {}
   };
   DAYS.forEach(d => {
     currentEntry.goals[d] = cats.map(()=>'');
     currentEntry.dailyAttempts[d] = cats.map(()=>0);
     currentEntry.dailySuccesses[d] = cats.map(()=>0);
+    currentEntry.dayStatus[d] = 'normal';
   });
   
   expandedAccordionDay = null;
@@ -909,7 +946,7 @@ function loadEntry(entryId){
     currentEntry.entryId = entryId;
     currentType = currentEntry.type || currentType;
     
-    applySafeguards(); 
+    applySafeguards(); // 안전장치 탑재 완료
 
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
@@ -1802,7 +1839,7 @@ function renderWeekAnalytics() {
 
   setTimeout(() => {
     if(analyticsLineChart) analyticsLineChart.destroy();
-    if(analyticsRadarChart) analyticsRadarChart.destroy(); // 방해 안되게 파괴
+    if(analyticsRadarChart) analyticsRadarChart.destroy(); 
     
     analyticsLineChart = new Chart(document.getElementById('analyticsScatter'), {
       type: 'scatter',
@@ -1941,7 +1978,7 @@ function renderByTypeResults(type, week){
       <div style="flex:1; min-width:220px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
         ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')">
           <span>${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
-          <span style="font-size:10px; color:#64748b;">시도 ${avg(s.entry.playerScores)} / 성공 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
+          <span style="font-size:10px; color:#64748b;">평균 시도 ${avg(s.entry.playerScores)} / 성공 ${avg(s.entry.coachScores)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
       <div style="flex:1; min-width:220px;"><h4 style="color:#ef4444;">⚠ 미제출 (${missing.length})</h4>
         ${missing.length ? missing.map(p=>`<div class="list-item" style="opacity:.55;"><span>${p.photo?`<img src="${p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
     </div>`;
@@ -1985,9 +2022,17 @@ async function exportExcel(){
       '바퀴 라벨': e.weekLabel,
       '시작일': e.weekStartDate
     };
-    cats.forEach((c, i) => { row[`[시도 횟수] ${c}`] = e.playerScores ? e.playerScores[i] || 0 : 0; });
-    cats.forEach((c, i) => { row[`[성공 횟수] ${c}`] = e.coachScores ? e.coachScores[i] || 0 : 0; });
-    DAYS.forEach(day => { cats.forEach((c, i) => { row[`[${day} 목적] ${c}`] = e.goals && e.goals[day] ? e.goals[day][i] || '' : ''; }); });
+    cats.forEach((c, i) => { row[`[평균 시도 횟수] ${c}`] = e.playerScores ? e.playerScores[i] || 0 : 0; });
+    cats.forEach((c, i) => { row[`[평균 성공 횟수] ${c}`] = e.coachScores ? e.coachScores[i] || 0 : 0; });
+    DAYS.forEach(day => { 
+      const status = e.dayStatus && e.dayStatus[day] ? e.dayStatus[day] : 'normal';
+      const statusStr = status === 'rest' ? '[휴식] ' : status === 'injury' ? '[부상] ' : '';
+      cats.forEach((c, i) => { 
+        row[`[${day} 목적] ${c}`] = statusStr + (e.goals && e.goals[day] ? e.goals[day][i] || '' : ''); 
+        row[`[${day} 시도] ${c}`] = e.dailyAttempts && e.dailyAttempts[day] ? e.dailyAttempts[day][i] || 0 : 0; 
+        row[`[${day} 성공] ${c}`] = e.dailySuccesses && e.dailySuccesses[day] ? e.dailySuccesses[day][i] || 0 : 0; 
+      }); 
+    });
     cats.forEach((c, i) => { row[`[선수 질문] ${c}`] = e.playerQuestions && e.playerQuestions[i] ? e.playerQuestions[i] : ''; });
     cats.forEach((c, i) => { row[`[영상] ${c}`] = e.videos && e.videos[i] ? e.videos[i].url || '' : ''; });
     return row;
