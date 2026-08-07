@@ -449,7 +449,7 @@ function applySafeguards() {
   currentEntry.coachFeedback = currentEntry.coachFeedback || '';
 }
 
-// 🌟 휴식, 부상을 제외하고 평균을 계산하는 함수 (키보드 닫힘 방지 적용 완료)
+// 🌟 휴식, 부상을 제외하고 평균을 계산하는 함수 (키보드 닫힘 방지 적용)
 function calculateAverages() {
   const cats = JOURNAL_TYPES[currentEntry.type].categories;
   cats.forEach((c, ci) => {
@@ -459,18 +459,21 @@ function calculateAverages() {
       const status = currentEntry.dayStatus[d] || 'normal';
       if (status === 'rest' || status === 'injury') return; // 휴식/부상 평균 제외
 
-      const att = currentEntry.dailyAttempts[d][ci] || 0;
-      const suc = currentEntry.dailySuccesses[d][ci] || 0;
+      // 🌟 레거시 데이터 방어막: dailyAttempts가 세팅된 경우에만 카운트!
+      const att = parseInt(currentEntry.dailyAttempts[d][ci]) || 0;
+      const suc = parseInt(currentEntry.dailySuccesses[d][ci]) || 0;
       
-      if (att > 0 || suc > 0 || currentEntry.goals[d][ci].trim() !== '') {
+      // 시도나 성공, 혹은 텍스트 목표 중 하나라도 적은 요일만 카운트
+      if (att > 0 || suc > 0 || (currentEntry.goals[d] && currentEntry.goals[d][ci].trim() !== '')) {
         attSum += att;
         sucSum += suc;
         activeDays++;
       }
     });
     
-    currentEntry.playerScores[ci] = activeDays ? Math.round((attSum / activeDays) * 10) / 10 : 0;
-    currentEntry.coachScores[ci] = activeDays ? Math.round((sucSum / activeDays) * 10) / 10 : 0;
+    // 🌟 레거시 1~5점 점수를 강제로 실제 '횟수 평균'으로 덮어씁니다!
+    currentEntry.playerScores[ci] = activeDays > 0 ? Math.round((attSum / activeDays) * 10) / 10 : 0;
+    currentEntry.coachScores[ci] = activeDays > 0 ? Math.round((sucSum / activeDays) * 10) / 10 : 0;
     
     // 화면 튕김(키보드 닫힘)을 막기 위해 텍스트만 DOM 교체
     const attEl = document.getElementById(`avg-att-${ci}`);
@@ -947,6 +950,8 @@ function loadEntry(entryId){
     currentType = currentEntry.type || currentType;
     
     applySafeguards(); 
+    // 🌟 레거시 데이터(1~5점)를 실제 평균값으로 덮어쓰기 위해 로딩 시 1회 강제 계산합니다.
+    calculateAverages(); 
 
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
@@ -958,7 +963,7 @@ function loadEntry(entryId){
   });
 }
 
-// 선수 개인 성장 추이 보기 함수 (이중축 지원)
+// 선수 개인 성장 추이 보기 함수 (이중축 단일Y 차트)
 async function showGrowthChart() {
   const res = await api({ action:'listEntries', playerId: currentPlayerId, type: currentType });
   if(!res.ok || res.entries.length < 2) {
@@ -983,15 +988,15 @@ async function showGrowthChart() {
     data: { 
       labels, 
       datasets: [
-        { label: '평균 시도 횟수', data: attemptsData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2, yAxisID: 'y' },
-        { label: '평균 성공 횟수', data: successesData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, yAxisID: 'y1' }
+        { label: '평균 시도 횟수', data: attemptsData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2 },
+        { label: '평균 성공 횟수', data: successesData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2 }
       ] 
     },
     options: { 
       responsive: true, 
       scales: { 
-        y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '시도 횟수(회)', color: '#E30613' }, min: 0 },
-        y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: '성공 횟수(회)', color: '#0284c7' }, min: 0, grid: { drawOnChartArea: false } }
+        // 단일 Y축 (이중축 제거)
+        y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '횟수 (회)', color: '#1a1a1a', font: {weight:'bold'} }, min: 0 }
       }, 
       plugins: { datalabels: { display: false } } 
     }
@@ -1416,7 +1421,6 @@ async function showDashboard(){
       if (!latest) return `<td class="dash-cell" style="text-align:center; color:#cbd5e1; padding:8px; border:1px solid #e2e8f0;" onclick="uiToast('작성된 일지가 없습니다.','info')">미작성</td>`;
       const done = latest.weekStartDate >= thisMonday;
       
-      // 🌟 과거 1~5점 데이터 방어막 (0으로 표기하고 전체 평균에서도 제외시킵니다)
       let attAvg = 0, sucAvg = 0;
       if (latest.dailyAttempts) {
         attAvg = avg(latest.playerScores);
@@ -1502,6 +1506,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   if (entry) {
     currentEntry = JSON.parse(JSON.stringify(entry));
     applySafeguards(); 
+    calculateAverages(); // 🌟 로딩 시 바로 0으로 리셋 
     expandedAccordionDay = null;
     renderJournal();   
   } else {
@@ -1699,7 +1704,6 @@ function renderPlayerAnalytics() {
   let playerAverages = {};
   filteredEntries.forEach(e => {
     if(!playerAverages[e.playerId]) playerAverages[e.playerId] = { sum:0, count:0 };
-    // 🌟 레거시 데이터 방어막 
     const attAvg = e.dailyAttempts ? avg(e.playerScores) : 0; 
     if(attAvg > 0) { playerAverages[e.playerId].sum += attAvg; playerAverages[e.playerId].count++; }
   });
@@ -1737,7 +1741,7 @@ function renderPlayerAnalytics() {
           <div id="radarCaptureArea" style="background:white; padding:10px; border-radius:8px;"><canvas id="analyticsRadar"></canvas></div>
         </div>
         <div class="chart-box" style="width:500px; max-width:100%;">
-          <h4>바퀴별 시도 및 성공 추이 (이중축)</h4>
+          <h4>바퀴별 시도 및 성공 추이</h4>
           <div id="lineCaptureArea" style="background:white; padding:10px; border-radius:8px;"><canvas id="analyticsLine"></canvas></div>
         </div>
       </div>
@@ -1750,7 +1754,6 @@ function renderPlayerAnalytics() {
     let compCatSums = cats.map(()=>0), compCatCounts = cats.map(()=>0);
     let teamCatSums = cats.map(()=>0), teamCatCounts = cats.map(()=>0);
 
-    // 🌟 레거시 데이터 방어막 추가!
     baseEntries.forEach(e => { if(e.dailyAttempts) e.playerScores.forEach((score, i) => { if(score > 0) { baseCatSums[i] += score; baseCatCounts[i]++; } }); });
     compareEntries.forEach(e => { if(e.dailyAttempts) e.playerScores.forEach((score, i) => { if(score > 0) { compCatSums[i] += score; compCatCounts[i]++; } }); });
     filteredEntries.forEach(e => { if(e.dailyAttempts) e.playerScores.forEach((score, i) => { if(score > 0) { teamCatSums[i] += score; teamCatCounts[i]++; } }); });
@@ -1777,8 +1780,8 @@ function renderPlayerAnalytics() {
     const sucLineData = sortedDates.map(d => { const e = baseEntries.find(x => x.weekStartDate===d); return (e && e.dailyAttempts) ? avg(e.coachScores) : null; });
 
     let lineDatasets = [
-      { label: `${baseName} (평균 시도)`, data: attLineData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2, spanGaps: true, yAxisID: 'y' },
-      { label: `${baseName} (평균 성공)`, data: sucLineData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, spanGaps: true, yAxisID: 'y1' }
+      { label: `${baseName} (평균 시도)`, data: attLineData, borderColor: '#E30613', backgroundColor: '#E30613', tension: 0.2, spanGaps: true },
+      { label: `${baseName} (평균 성공)`, data: sucLineData, borderColor: '#0284c7', backgroundColor: '#0284c7', tension: 0.2, spanGaps: true }
     ];
 
     if(analyticsLineChart) analyticsLineChart.destroy();
@@ -1789,8 +1792,8 @@ function renderPlayerAnalytics() {
       options: { 
         responsive: true, 
         scales: { 
-          y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '시도 횟수 (회)', color: '#E30613', font: {weight:'bold'} }, min: 0 },
-          y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: '성공 횟수 (회)', color: '#0284c7', font: {weight:'bold'} }, min: 0, grid: { drawOnChartArea: false } }
+          // 🌟 단일 축으로 통합 완료!
+          y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '횟수 (회)', color: '#1a1a1a', font: {weight:'bold'} }, min: 0 }
         }, 
         plugins: { datalabels: { display: false } } 
       } 
@@ -1800,49 +1803,53 @@ function renderPlayerAnalytics() {
   }, 50);
 }
 
+// 🌟 주차별 팀 분석: 막대그래프(Bar Chart) 렌더링 🌟
 function renderWeekAnalytics() {
   const type = document.getElementById('analyticsWeekType').value;
   const week = document.getElementById('analyticsWeekSelect').value;
   if (!week) { document.getElementById('analyticsContent').style.display = 'none'; document.getElementById('analyticsEmpty').innerText = '분석할 바퀴를 선택해주세요.'; document.getElementById('analyticsEmpty').style.display = 'block'; return; }
   
-  // 🌟 레거시 데이터 (dailyAttempts가 없는 것)는 제외합니다!
+  // 레거시 데이터는 차단
   const entries = byTypeCache.entries.filter(e => e.type === type && e.weekStartDate === week && e.dailyAttempts);
   if (entries.length === 0) { document.getElementById('analyticsContent').style.display = 'none'; document.getElementById('analyticsEmpty').innerText = '선택한 바퀴에 새로 입력된 시도/성공 데이터가 없습니다.'; document.getElementById('analyticsEmpty').style.display = 'block'; return; }
 
-  const cats = JOURNAL_TYPES[type].categories;
-  let teamAttSums = cats.map(()=>0), teamAttCounts = cats.map(()=>0);
-  let overallSum = 0, overallCount = 0;
-  let playerRankings = [];
+  let teamAttSums = 0, teamSucSums = 0;
+  let overallCount = entries.length;
+  
+  // 🌟 모든 선수의 이름을 X축으로, 데이터를 막대로 세팅
+  const playerNames = [];
+  const attAvgs = [];
+  const sucAvgs = [];
 
   entries.forEach(e => {
-    const scoreAvg = avg(e.coachScores); // 성공 횟수로 랭킹
-    if(scoreAvg > 0) {
-      overallSum += scoreAvg; overallCount++;
-      playerRankings.push({ id: e.playerId, name: e.playerName, avg: scoreAvg });
-    }
-    // 레이더 차트용 시도 횟수
-    e.playerScores.forEach((score, i) => { if(score > 0) { teamAttSums[i] += score; teamAttCounts[i]++; } });
+    const attAvg = avg(e.playerScores);
+    const sucAvg = avg(e.coachScores);
+    teamAttSums += attAvg;
+    teamSucSums += sucAvg;
+    
+    playerNames.push(e.playerName);
+    attAvgs.push(attAvg);
+    sucAvgs.push(sucAvg);
   });
 
-  const teamCatAvgs = teamAttSums.map((sum, i) => teamAttCounts[i] ? Math.round(sum/teamAttCounts[i]*10)/10 : 0);
-  const teamOverallAvg = overallCount > 0 ? Math.round(overallSum/overallCount*10)/10 : 0;
-  playerRankings.sort((a,b) => b.avg - a.avg); 
+  const teamAttAvg = overallCount > 0 ? Math.round(teamAttSums/overallCount*10)/10 : 0;
+  const teamSucAvg = overallCount > 0 ? Math.round(teamSucSums/overallCount*10)/10 : 0;
 
   document.getElementById('analyticsContent').innerHTML = `
     <div style="background:#f0f9ff; border:1px solid #7dd3fc; border-radius:8px; padding:16px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
       <div style="flex:1;">
-        <div style="font-size:12px; color:#0284c7; font-weight:bold;">${entries[0].weekLabel || week} 팀 평균 요약</div>
-        <div style="font-size:20px; font-weight:900; margin-top:4px;">시도: ${overallCount > 0 ? Math.round(avg(entries.map(e=>avg(e.playerScores)))*10)/10 : 0}회 <span style="font-weight:normal; margin:0 8px;">/</span> 성공: ${teamOverallAvg}회</div>
+        <div style="font-size:12px; color:#0284c7; font-weight:bold;">${entries[0].weekLabel || week} 팀 전체 요약</div>
+        <div style="font-size:20px; font-weight:900; margin-top:4px;">팀 평균 시도: ${teamAttAvg}회 <span style="font-weight:normal; margin:0 8px;">/</span> 팀 평균 성공: ${teamSucAvg}회</div>
         <div style="font-size:11px; color:#64748b; margin-top:2px;">제출 및 평가 완료 선수: ${overallCount}명</div>
       </div>
     </div>
     <div class="charts-row" style="margin-top:0; align-items: flex-start;">
       <div class="chart-box" style="width:100%; max-width:800px; flex: 1; min-width: 300px;">
-        <h4>선수별 시도 vs 성공 분포도 (산점도)</h4>
-        <div style="background:white; padding:20px; border: 1px solid #cbd5e1; border-radius:8px;">
-          <canvas id="analyticsScatter"></canvas>
+        <h4>선수별 시도 및 성공 횟수 비교</h4>
+        <div style="background:white; padding:20px; border: 1px solid #cbd5e1; border-radius:8px; overflow-x:auto;">
+          <!-- 🌟 막대 차트 (Bar) -->
+          <canvas id="analyticsScatter" style="min-width: 600px;"></canvas>
         </div>
-        <div style="font-size:11px; color:#64748b; margin-top:10px;">* 각 점은 선수를 나타냅니다. (우측 상단으로 갈수록 시도와 성공이 모두 높습니다)</div>
       </div>
     </div>
   `;
@@ -1853,49 +1860,46 @@ function renderWeekAnalytics() {
     if(analyticsLineChart) analyticsLineChart.destroy();
     if(analyticsRadarChart) analyticsRadarChart.destroy(); 
     
-    // 산점도용 데이터 구성
-    const scatterData = entries.map(e => {
-      const attAvg = avg(e.playerScores);
-      const sucAvg = avg(e.coachScores);
-      return { x: attAvg, y: sucAvg, name: e.playerName };
-    });
-
+    // 🌟 막대그래프 렌더링
     analyticsLineChart = new Chart(document.getElementById('analyticsScatter'), {
-      type: 'scatter',
+      type: 'bar',
       data: {
-        datasets: [{
-          label: '선수 분포',
-          data: scatterData,
-          backgroundColor: '#E30613',
-          borderColor: '#E30613',
-          pointRadius: 6,
-          pointHoverRadius: 8
-        }]
+        labels: playerNames,
+        datasets: [
+          {
+            label: '평균 시도 횟수',
+            data: attAvgs,
+            backgroundColor: '#E30613',
+            borderRadius: 4
+          },
+          {
+            label: '평균 성공 횟수',
+            data: sucAvgs,
+            backgroundColor: '#0284c7',
+            borderRadius: 4
+          }
+        ]
       },
       options: {
         responsive: true,
         plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const pt = ctx.raw;
-                return `${pt.name} (시도 ${pt.x}회, 성공 ${pt.y}회)`;
-              }
-            }
-          },
+          legend: { display: true, position: 'top' },
           datalabels: {
             display: true,
-            color: '#1a1a1a',
-            align: 'top',
-            offset: 4,
+            color: '#ffffff',
             font: { weight: 'bold', size: 10 },
-            formatter: (value) => { return value.name; }
+            formatter: (value) => { return value > 0 ? value : ''; }
           }
         },
         scales: {
-          x: { title: { display: true, text: '평균 시도 횟수 (X축)', font: {weight:'bold'} }, min: 0 },
-          y: { title: { display: true, text: '평균 성공 횟수 (Y축)', font: {weight:'bold'} }, min: 0 }
+          x: { 
+            title: { display: false },
+            ticks: { font: { weight: 'bold' } }
+          },
+          y: { 
+            beginAtZero: true, 
+            title: { display: true, text: '횟수 (회)', font: {weight:'bold'} } 
+          }
         }
       }
     });
@@ -2082,209 +2086,6 @@ async function exportExcel(){
   XLSX.writeFile(wb, `FC_SEOUL_전체데이터_백업_${dateStr(new Date())}.xlsx`);
   loading(false);
   uiToast('엑셀 파일(전체 통합본)이 다운로드되었습니다.');
-}
-
-/* ---------- 🌟 Kuatiahaipyre (Journal rendering) 🌟 ---------- */
-function renderJournal(){
-  hidePanels(); document.getElementById('journalWrapper').style.display = 'block';
-  const isPlayer = currentUser.role === 'player', isCoach = currentUser.role === 'coach';
-  const cats = JOURNAL_TYPES[currentEntry.type].categories;
-
-  document.getElementById('journalActionsRow').innerHTML = `
-    ${isCoach ? `<button style="background:#0284c7" onclick="exportPNG()"><i class="fa fa-image"></i> PNG 저장</button>
-    <button style="background:var(--black)" onclick="window.print()"><i class="fa fa-print"></i> PDF 저장</button>` : ''}
-    <button style="background:#16a34a" onclick="saveEntry()"><i class="fa fa-save"></i> 수동 저장</button>`;
-
-  const photo = isPlayer ? (currentUser.photo||'') : ((playersInfo[currentPlayerId]||{}).photo||'');
-  let html = `<div class="j-title">${photo?`<img src="${photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;border:2px solid var(--gold);">`:''}${JOURNAL_TYPES[currentEntry.type].title} — ${currentEntry.playerName||''}</div>`;
-  html += `<div class="j-meta">${currentEntry.weekLabel||''} · 시작일: ${currentEntry.weekStartDate}</div>`;
-  
-  html += `<div class="table-responsive"><table class="j-table"><thead><tr><th>선수,지도자 (${currentEntry.weekLabel||''})</th>${cats.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>`;
-
-  // 요일별 셀 내부에 목표 + 시도/성공 횟수 직접 입력창 렌더링
-  DAYS.forEach(d => {
-    const isExpanded = expandedAccordionDay === d ? 'acc-expanded' : '';
-    
-    html += `<tr class="goal-row ${isExpanded}">
-      <td data-label="구분" onclick="toggleMobileAccordion(this, '${d}')" style="position:relative;">
-        개인 목적 (${d})
-        <select class="day-status-select" data-day="${d}" onchange="updateDayStatusLocal(this)" onclick="event.stopPropagation()" ${isPlayer?'':'disabled'}>
-          <option value="normal" ${currentEntry.dayStatus[d]==='normal'?'selected':''}>💪 훈련 참여</option>
-          <option value="rest" ${currentEntry.dayStatus[d]==='rest'?'selected':''}>💤 휴식</option>
-          <option value="injury" ${currentEntry.dayStatus[d]==='injury'?'selected':''}>🚑 부상</option>
-        </select>
-        <i class="fa fa-chevron-down acc-icon"></i>
-      </td>`;
-      
-    const dStatus = currentEntry.dayStatus[d] || 'normal';
-    const cellOpacity = dStatus === 'normal' ? '1' : '0.4';
-
-    cats.forEach((c, ci) => {
-      const val = (currentEntry.goals[d]||[])[ci] || '';
-      const att = (currentEntry.dailyAttempts[d]||[])[ci] || 0;
-      const suc = (currentEntry.dailySuccesses[d]||[])[ci] || 0;
-      
-      // 🌟 입력창 onfocus 이벤트로 "0"일 때 자동 비움, onblur에선 "0" 복구
-      html += `<td class="goal-cell" data-label="${c}" style="opacity: ${cellOpacity}; transition: opacity 0.3s;">
-        <textarea data-day="${d}" data-ci="${ci}" onkeyup="updateGoalLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 목표 작성">${esc(val)}</textarea>
-        <div class="daily-stats-row">
-          <div class="daily-stat att"><span>시도</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${att}" onfocus="if(this.value==='0') this.value='';" onblur="if(this.value==='') this.value='0'; updateDailyStatLocal(this, 'att'); scheduleAutoSave();" onkeyup="updateDailyStatLocal(this, 'att')" onchange="updateDailyStatLocal(this, 'att')" ${isPlayer?'':'disabled'}></div>
-          <div class="daily-stat suc"><span>성공</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${suc}" onfocus="if(this.value==='0') this.value='';" onblur="if(this.value==='') this.value='0'; updateDailyStatLocal(this, 'suc'); scheduleAutoSave();" onkeyup="updateDailyStatLocal(this, 'suc')" onchange="updateDailyStatLocal(this, 'suc')" ${isPlayer?'':'disabled'}></div>
-        </div>
-      </td>`;
-    });
-    html += `</tr>`;
-  });
-
-  html += `<tr class="score-row"><td data-label="구분">평균 시도 횟수<div class="eval-helper">[입력된 날짜 기준 평균값]</div></td>${cats.map((c,ci)=>`<td data-label="${c}" style="text-align:center; font-size:16px; font-weight:bold; color:#ef4444; background:#fef2f2;" id="avg-att-${ci}">${currentEntry.playerScores[ci]||0}회</td>`).join('')}</tr>`;
-  html += `<tr class="score-row"><td data-label="구분">평균 성공 횟수<div class="eval-helper">[입력된 날짜 기준 평균값]</div></td>${cats.map((c,ci)=>`<td data-label="${c}" style="text-align:center; font-size:16px; font-weight:bold; color:#0284c7; background:#f0f9ff;" id="avg-suc-${ci}">${currentEntry.coachScores[ci]||0}회</td>`).join('')}</tr>`;
-  
-  html += `<tr class="question-row"><td data-label="구분">주제별 선수 질문사항</td>${cats.map((c,ci)=>`<td data-label="${c}"><textarea data-ci="${ci}" onkeyup="updatePlayerQuestionLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 질문 작성" style="width:100%; border:1px solid #cbd5e1; border-radius:4px; padding:6px; font-size:11px; resize:vertical; min-height:50px; background:#f8fafc;">${esc((currentEntry.playerQuestions||[])[ci]||'')}</textarea></td>`).join('')}</tr>`;
-
-  html += `<tr class="video-row"><td data-label="구분">영상 업로드</td>`;
-  cats.forEach((c, ci) => {
-    const v = currentEntry.videos[ci] || {url:''};
-    html += `<td data-label="${c}"><div class="video-cell">
-      <input type="text" placeholder="링크 붙여넣기" value="${esc(v.url||'')}" data-ci="${ci}" onkeyup="updateVideoLocal(this)" onblur="scheduleAutoSave()">
-      <div style="display:flex; gap:4px; align-items:center;">
-        <button onclick="document.getElementById('vf${ci}').click()"><i class="fa fa-upload"></i> 파일 업로드</button>
-        <input type="file" id="vf${ci}" accept="video/mp4,video/quicktime" style="display:none" data-ci="${ci}" onchange="uploadVideo(this)">
-      </div>
-      ${v.url ? `<a href="${v.url}" target="_blank">▶ 영상보기</a>` : ''}
-    </div></td>`;
-  });
-  html += `</tr></tbody></table></div>`;
-
-  html += `<div class="legend-row">${cats.map((c,i)=>`<div><span class="dot" style="background:${PALETTE[i]}"></span>${c}</div>`).join('')}</div>`;
-  
-  html += `<div class="charts-row">
-    <div class="chart-box"><h4>주제별 평균 시도 비율</h4><canvas id="playerPie"></canvas></div>
-    <div class="chart-box"><h4>주제별 평균 성공 비율</h4><canvas id="coachPie"></canvas></div>
-  </div>`;
-
-  html += `<div class="note-box" style="background:#fff8f5; border-color:var(--red);">
-    <div style="font-size:12.5px; font-weight:900; color:var(--red); margin-bottom:6px;">✏️ 선수 의견 / 생각</div>
-    <textarea rows="3" onkeyup="updatePlayerCommentLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="이번 바퀴 느낀 점, 다음 목표 등을 적어보세요.">${esc(currentEntry.playerComment)}</textarea></div>`;
-  html += `<div class="note-box" style="background:#f8fafc; border-color:var(--gold);">
-    <div style="font-size:12.5px; font-weight:900; margin-bottom:6px;">🗣 지도자 피드백 (종합)</div>
-    <textarea rows="3" onkeyup="updateCoachFeedbackLocal(this)" onblur="scheduleAutoSave()" ${isCoach?'':'disabled'} placeholder="선수의 질문에 대한 답변과 피드백을 적어주세요.">${esc(currentEntry.coachFeedback)}</textarea></div>`;
-
-  document.getElementById('journalCard').innerHTML = html;
-  drawPies(cats);
-}
-
-// 🌟 요일별 상태(정상/휴식/부상) 업데이트 (이것만 새로고침)
-function updateDayStatusLocal(el) {
-  const d = el.dataset.day;
-  currentEntry.dayStatus[d] = el.value;
-  calculateAverages();
-  renderJournal(); 
-  scheduleAutoSave();
-}
-
-// 🌟 화면 튕김 방지 (전체 새로고침을 하지 않고 DOM 내부 숫자와 차트만 교체)
-function updateDailyStatLocal(el, type) {
-  const day = el.dataset.day;
-  const ci = parseInt(el.dataset.ci);
-  const val = parseInt(el.value) || 0;
-  
-  if (type === 'att') currentEntry.dailyAttempts[day][ci] = val;
-  else currentEntry.dailySuccesses[day][ci] = val;
-  
-  calculateAverages();
-  drawPies(JOURNAL_TYPES[currentEntry.type].categories); 
-  // 입력 중이므로 scheduleAutoSave는 onblur에서만 확실히 처리합니다. (불필요한 중복 호출 방지)
-}
-
-function updateGoalLocal(el){ currentEntry.goals[el.dataset.day][parseInt(el.dataset.ci)] = el.value; calculateAverages(); scheduleAutoSave(); }
-function updatePlayerQuestionLocal(el){ currentEntry.playerQuestions[parseInt(el.dataset.ci)] = el.value; }
-function updateVideoLocal(el){ currentEntry.videos[parseInt(el.dataset.ci)] = { url: el.value }; }
-function updatePlayerCommentLocal(el){ currentEntry.playerComment = el.value; }
-function updateCoachFeedbackLocal(el){ currentEntry.coachFeedback = el.value; }
-
-function toggleMobileAccordion(el, day) {
-  if (window.innerWidth > 820) return; 
-  const tr = el.closest('tr');
-  if (tr.classList.contains('acc-expanded')) {
-    tr.classList.remove('acc-expanded');
-    expandedAccordionDay = null; 
-  } else {
-    document.querySelectorAll('.goal-row').forEach(row => row.classList.remove('acc-expanded'));
-    tr.classList.add('acc-expanded');
-    expandedAccordionDay = day; 
-  }
-}
-
-async function uploadVideo(el){
-  const file = el.files[0]; if (!file) return;
-  if (file.size > 25*1024*1024) await uiAlert('25MB 초과 파일은 업로드가 원활하지 않을 수 있어요.', '주의');
-  const ci = parseInt(el.dataset.ci);
-  const reader = new FileReader();
-  reader.onload = async ev => {
-    loading(true, '대용량 영상/파일을 업로드하는 중입니다.<br>창을 닫지 마세요...');
-    const res = await api({ action:'uploadFile', base64: ev.target.result, filename: file.name, mimeType: file.type }, true);
-    loading(false);
-    if (res.ok) { currentEntry.videos[ci] = { url: res.viewUrl }; renderJournal(); uiToast('업로드 완료!'); }
-    else await uiAlert('업로드 실패: ' + res.error, '오류');
-  };
-  reader.readAsDataURL(file);
-}
-
-// 차트 플러그인
-function drawPies(cats){
-  const pSum = currentEntry.playerScores.reduce((a,b)=>a+b,0) || 1;
-  const cSum = currentEntry.coachScores.reduce((a,b)=>a+b,0) || 1;
-  const pData = currentEntry.playerScores.map(v=> Math.round(v/pSum*1000)/10);
-  const cData = currentEntry.coachScores.map(v=> Math.round(v/cSum*1000)/10);
-  
-  if (playerChart) playerChart.destroy();
-  if (coachChart) coachChart.destroy();
-  
-  const opts = { 
-    responsive: true, 
-    plugins: { 
-      legend: { display: false }, 
-      tooltip: { callbacks: { label: c => c.label + ': ' + c.parsed + '%' } },
-      datalabels: {
-        color: '#ffffff',
-        font: { weight: 'bold', size: 14 },
-        formatter: (value) => { return value > 0 ? value + '%' : ''; }
-      }
-    } 
-  };
-  
-  playerChart = new Chart(document.getElementById('playerPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:pData, backgroundColor:PALETTE }] }, options:opts });
-  coachChart = new Chart(document.getElementById('coachPie'), { type:'pie', data:{ labels:cats, datasets:[{ data:cData, backgroundColor:PALETTE }] }, options:opts });
-}
-
-async function saveEntry(){
-  if (!currentEntry) return;
-  loading(true, '일지를 저장 중입니다...');
-  const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-  loading(false);
-  if (res.ok) { currentEntry.entryId = res.entryId; uiToast('저장되었습니다.'); loadArchive(); }
-  else await uiAlert('저장 실패: ' + res.error, '오류');
-}
-
-function scheduleAutoSave(){
-  if (!currentEntry) return;
-  clearTimeout(autoSaveTimer);
-  autoSaveTimer = setTimeout(async () => {
-    autoSaveTimer = null; 
-    const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-    if (res.ok) { currentEntry.entryId = res.entryId; uiToast('자동저장되었습니다.'); }
-  }, 2000);
-}
-
-async function exportPNG(){
-  const originalScrollY = window.scrollY;
-  window.scrollTo(0, 0);
-  const canvas = await html2canvas(document.getElementById('journalCard'), { scale:2, useCORS:true, backgroundColor:'#ffffff', scrollY: 0 });
-  window.scrollTo(0, originalScrollY);
-  
-  const a = document.createElement('a');
-  a.href = canvas.toDataURL('image/png'); a.download = `훈련일지_${currentEntry.playerName}_${currentEntry.weekStartDate}.png`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 </script>
 </body>
