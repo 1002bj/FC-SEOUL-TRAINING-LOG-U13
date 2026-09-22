@@ -159,6 +159,17 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 #topProgressBar { position:fixed; top:0; left:0; width:0%; height:3px; background:linear-gradient(90deg, var(--red), var(--gold)); z-index:99999; transition:width 0.25s ease-out, opacity 0.3s; opacity:0; pointer-events:none; }
 #topProgressBar.active { opacity:1; }
 
+@keyframes dashShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.dash-skeleton-cell {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: dashShimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
 /* 상태 인디케이터 (저장 중/완료) */
 #statusBadge { position:fixed; bottom:20px; right:20px; z-index:9999; background:rgba(15,23,42,0.85); color:white; font-size:12px; font-weight:600; padding:6px 14px; border-radius:20px; backdrop-filter:blur(4px); box-shadow:0 4px 12px rgba(0,0,0,0.15); display:none; align-items:center; gap:8px; pointer-events:none; transition:opacity 0.2s; }
 
@@ -719,7 +730,6 @@ async function api(payload, silent){
       const isStarting = err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
       
       if (retries > 0 && isStarting) {
-        if (!silent) loading(true, `서버 연결 대기 중... (${5 - retries}/4)`);
         await new Promise(r => setTimeout(r, delay));
         delay = Math.min(delay * 1.5, 3000);
         continue;
@@ -736,9 +746,9 @@ async function api(payload, silent){
               return { ok: false, error: 'Firebase 모드로 전환되었습니다.' };
             }
           } else if (err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch')) {
-            uiToast('일시적 네트워크 지연이 있습니다. 잠시 후 자동으로 반영됩니다.', 'info');
+            console.warn('[Network] Connection delay detected, silent recovery active.');
           } else {
-            await uiAlert('서버 통신 오류:\n' + err.message, '오류 안내');
+            console.error('[API Error]', err);
           }
         }
         return { ok: false, error: String(err.message || err) };
@@ -1093,7 +1103,7 @@ async function createEntry(){
 }
 
 function loadEntry(entryId){
-  loading(true, '일지를 불러오는 중입니다...');
+  loading(true);
   api({ action:'getEntry', entryId }, true).then(async res => {
     loading(false);
     if (!res.ok) { await uiAlert(res.error, '오류'); return; }
@@ -2262,14 +2272,8 @@ async function onPlayerChange(){
 }
 
 /* ---------- 🚀 전체 대시보드 ---------- */
-async function showDashboard(){
-  await flushPendingSaves(); 
-  hidePanels(); document.getElementById('dashboardWrapper').style.display = 'block';
-  document.getElementById('dashboardCard').innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;"><i class="fa fa-spinner fa-spin fa-2x" style="margin-bottom:16px;"></i><br><b style="color:var(--black);">전체 데이터를 분석 중입니다...</b></div>';
-
-  const res = await api({ action:'getAllData', requesterId: currentUser.id });
-  if (!res.ok) { await uiAlert(res.error, '오류'); return; }
-
+function renderDashboardFromData(res) {
+  if (!res || !res.users) return;
   const players = res.users.filter(u => u.role==='player');
   const allDiariesMap = {};
   players.forEach(p => {
@@ -2279,7 +2283,7 @@ async function showDashboard(){
     });
   });
 
-  const pendingFeedbacks = res.entries.filter(e => { const noText = !e.coachFeedback || e.coachFeedback.trim() === ''; return noText; }).sort((a,b) => new Date(b.weekStartDate) - new Date(a.weekStartDate));
+  const pendingFeedbacks = (res.entries || []).filter(e => { const noText = !e.coachFeedback || e.coachFeedback.trim() === ''; return noText; }).sort((a,b) => new Date(b.weekStartDate) - new Date(a.weekStartDate));
   let pendingHtml = '';
   if (pendingFeedbacks.length > 0) {
     pendingHtml = `<div class="alert-box"><h4><i class="fa fa-bell"></i> 지도자 피드백 요망 (${pendingFeedbacks.length}건)</h4><div style="max-height:160px; overflow-y:auto;">${pendingFeedbacks.map(pf => `<div class="alert-item" onclick="openDashboardEntry('${pf.playerId}', '${esc(pf.playerName)}', '${pf.type}', '${pf.entryId}')"><span><b>${pf.playerName}</b> · ${JOURNAL_TYPES[pf.type].title}</span><span>${(pf.weekLabel||pf.weekStartDate)} <i class="fa fa-arrow-right" style="margin-left:4px; opacity:0.5;"></i></span></div>`).join('')}</div></div>`;
@@ -2291,7 +2295,7 @@ async function showDashboard(){
 
   const rows = players.map(p => {
     const cycleCells = types.map(t => {
-      const es = res.entries.filter(e => e.playerId===p.id && e.type===t && e.playerScores).sort((a,b)=> new Date(b.weekStartDate)-new Date(a.weekStartDate));
+      const es = (res.entries || []).filter(e => e.playerId===p.id && e.type===t && e.playerScores).sort((a,b)=> new Date(b.weekStartDate)-new Date(a.weekStartDate));
       const latest = es[0];
       if (!latest) return `<td class="dash-cell" style="text-align:center; color:#cbd5e1; padding:8px; border:1px solid #e2e8f0;" onclick="uiToast('작성된 일지가 없습니다.','info')">미작성</td>`;
       const done = latest.weekStartDate >= thisMonday;
@@ -2314,7 +2318,63 @@ async function showDashboard(){
   }).join('');
 
   document.getElementById('dashboardCard').innerHTML = `${pendingHtml}<h2 style="margin:0 0 4px;">전체 대시보드</h2><div style="font-size:11px; color:#64748b; margin-bottom:16px;">이번 바퀴(${thisMonday}~) 기준 작성 현황 (클릭 시 일지로 바로 이동)</div><div style="display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap;"><div style="flex:1; min-width:140px; background:#fff5f5; border:1px solid #f1948a; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (시도 횟수)</div><div style="font-size:24px; font-weight:900; color:var(--red);">${count?Math.round(pSum/count*10)/10:0}회</div></div><div style="flex:1; min-width:140px; background:#f0f9ff; border:1px solid #7dd3fc; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (성공 횟수)</div><div style="font-size:24px; font-weight:900; color:#0284c7;">${count?Math.round(cSum/count*10)/10:0}회</div></div></div><div class="table-responsive"><table style="width:100%; border-collapse:collapse; font-size:11.5px; min-width:650px;"><thead><tr style="background:var(--black); color:white;"><th style="padding:10px 8px; text-align:left; border-right:1px solid #475569;">선수</th>${types.map(t=>`<th style="padding:10px 8px; border-right:1px solid #475569;">${JOURNAL_TYPES[t].title}</th>`).join('')}<th style="padding:10px 8px;">📷 포토 일지</th></tr></thead><tbody>${rows || `<tr><td colspan="${types.length+2}" style="text-align:center; color:#94a3b8; padding:20px;">등록된 선수가 없습니다.</td></tr>`}</tbody></table></div>`;
-  byTypeCache = res; 
+}
+
+function renderDashboardSkeleton() {
+  const thisMonday = dateStr(monday(new Date()));
+  const types = Object.keys(JOURNAL_TYPES);
+  const dummyRows = [1, 2, 3, 4, 5].map(() => `
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:12px 8px; border:1px solid #e2e8f0; border-left:none;"><div class="dash-skeleton-cell" style="width:70px; height:18px;"></div></td>
+      ${types.map(() => `<td style="padding:10px 8px; border:1px solid #e2e8f0;"><div class="dash-skeleton-cell" style="width:90%; height:28px; margin:0 auto;"></div></td>`).join('')}
+      <td style="padding:10px 8px; border:1px solid #e2e8f0;"><div class="dash-skeleton-cell" style="width:90%; height:28px; margin:0 auto;"></div></td>
+    </tr>`).join('');
+
+  document.getElementById('dashboardCard').innerHTML = `
+    <h2 style="margin:0 0 4px;">전체 대시보드</h2>
+    <div style="font-size:11px; color:#64748b; margin-bottom:16px;">이번 바퀴(${thisMonday}~) 기준 작성 현황 (클릭 시 일지로 바로 이동)</div>
+    <div style="display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:140px; background:#fff5f5; border:1px solid #f1948a; border-radius:8px; padding:14px; text-align:center;">
+        <div style="font-size:11px; color:#64748b;">팀 평균 (시도 횟수)</div>
+        <div style="font-size:24px; font-weight:900; color:var(--red);">-</div>
+      </div>
+      <div style="flex:1; min-width:140px; background:#f0f9ff; border:1px solid #7dd3fc; border-radius:8px; padding:14px; text-align:center;">
+        <div style="font-size:11px; color:#64748b;">팀 평균 (성공 횟수)</div>
+        <div style="font-size:24px; font-weight:900; color:#0284c7;">-</div>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table style="width:100%; border-collapse:collapse; font-size:11.5px; min-width:650px;">
+        <thead>
+          <tr style="background:var(--black); color:white;">
+            <th style="padding:10px 8px; text-align:left; border-right:1px solid #475569;">선수</th>
+            ${types.map(t=>`<th style="padding:10px 8px; border-right:1px solid #475569;">${JOURNAL_TYPES[t].title}</th>`).join('')}
+            <th style="padding:10px 8px;">📷 포토 일지</th>
+          </tr>
+        </thead>
+        <tbody>${dummyRows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function showDashboard(){
+  await flushPendingSaves(); 
+  hidePanels(); document.getElementById('dashboardWrapper').style.display = 'block';
+
+  // 1. 캐시가 있으면 즉시 표를 그려서 깜빡임과 딜레이 제거
+  if (byTypeCache && byTypeCache.users) {
+    renderDashboardFromData(byTypeCache);
+  } else {
+    // 2. 초기 렌더링 시에도 안내 문구 대신 즉시 대시보드 표 뼈대(Skeleton)를 보여줌
+    renderDashboardSkeleton();
+  }
+
+  // 3. 백그라운드에서 최신 데이터를 1회 갱신 (화면 차단 없음)
+  const res = await api({ action:'getAllData', requesterId: currentUser.id }, true);
+  if (res && res.ok) {
+    byTypeCache = res;
+    renderDashboardFromData(res);
+  }
 }
 
 function openDashboardEntry(playerId, playerName, type, entryId) {
@@ -2327,7 +2387,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
     document.getElementById('typeSelect').value = type;
   }
   loadArchive();
-  const entry = byTypeCache.entries.find(e => e.entryId === entryId);
+  const entry = byTypeCache && byTypeCache.entries ? byTypeCache.entries.find(e => e.entryId === entryId) : null;
   if (entry) { currentEntry = JSON.parse(JSON.stringify(entry)); applySafeguards(); calculateAverages(); expandedAccordionDay = null; renderJournal(); } else loadEntry(entryId);
 }
 
@@ -2338,9 +2398,7 @@ async function openDashboardDiary(playerId, playerName, targetDate) {
   const detailArea = document.getElementById('playerDetailArea');
   if (detailArea) detailArea.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" class="active" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
   initDiaryView();
-  loading(true, '사진을 불러오는 중입니다...');
-  api({ action:'listDiary', playerId: currentPlayerId }).then(res => {
-    loading(false);
+  api({ action:'listDiary', playerId: currentPlayerId }, true).then(res => {
     if(res.ok) {
       document.getElementById('sidebarBody').innerHTML = `<h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3><div id="diaryList">불러오는 중...</div><div class="sidebar-cal"><div class="cal-header"><button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button><span id="calTitle"></span><button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button></div><div class="cal-grid" id="calGrid"></div></div>`;
       diaryListCache = res.diary.map(d => { if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0]; return d; }).sort((a,b) => new Date(b.date) - new Date(a.date));
@@ -2367,18 +2425,27 @@ function setAnalyticsMode(mode) {
 
 async function showAnalytics(){
   await flushPendingSaves(); hidePanels(); document.getElementById('analyticsWrapper').style.display = 'block';
-  document.getElementById('analyticsCard').innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">데이터를 불러오는 중...</div>';
-  if(!byTypeCache) {
-    const res = await api({ action:'getAllData', requesterId: currentUser.id });
-    if (!res.ok) { document.getElementById('analyticsCard').innerHTML = `<div style="color:#ef4444;">${res.error}</div>`; return; }
-    byTypeCache = res;
+  
+  function renderAnalyticsShell() {
+    document.getElementById('analyticsCard').innerHTML = `
+      <h2 style="margin:0 0 14px;">📊 심층 분석 대시보드</h2>
+      <div class="analytics-tabs"><button id="tabBtnPlayer" class="active" onclick="setAnalyticsMode('player')">개인 분석 및 1:1 비교</button><button id="tabBtnWeek" onclick="setAnalyticsMode('week')">바퀴별 전체 팀 분석</button></div>
+      <div id="analyticsControlsArea" class="analytics-controls" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:20px; background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #cbd5e1;"></div>
+      <div id="analyticsContent" style="display:none;"></div><div id="analyticsEmpty" class="empty" style="color:#94a3b8; display:block;">기준을 선택해주세요.</div>`;
+    renderAnalyticsControls(); renderAnalyticsCharts();
   }
-  document.getElementById('analyticsCard').innerHTML = `
-    <h2 style="margin:0 0 14px;">📊 심층 분석 대시보드</h2>
-    <div class="analytics-tabs"><button id="tabBtnPlayer" class="active" onclick="setAnalyticsMode('player')">개인 분석 및 1:1 비교</button><button id="tabBtnWeek" onclick="setAnalyticsMode('week')">바퀴별 전체 팀 분석</button></div>
-    <div id="analyticsControlsArea" class="analytics-controls" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:20px; background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #cbd5e1;"></div>
-    <div id="analyticsContent" style="display:none;"></div><div id="analyticsEmpty" class="empty" style="color:#94a3b8; display:block;">기준을 선택해주세요.</div>`;
-  renderAnalyticsControls(); renderAnalyticsCharts();
+
+  if (byTypeCache && byTypeCache.users) {
+    renderAnalyticsShell();
+  } else {
+    document.getElementById('analyticsCard').innerHTML = '<div style="padding:20px 0;"><div class="dash-skeleton-cell" style="width:200px; height:24px; margin-bottom:16px;"></div><div class="dash-skeleton-cell" style="width:100%; height:80px; margin-bottom:16px;"></div><div class="dash-skeleton-cell" style="width:100%; height:250px;"></div></div>';
+  }
+
+  const res = await api({ action:'getAllData', requesterId: currentUser.id }, true);
+  if (res && res.ok) {
+    byTypeCache = res;
+    renderAnalyticsShell();
+  }
 }
 
 function renderAnalyticsControls() {
@@ -2616,21 +2683,32 @@ async function generatePDFReport() {
 async function showByType(){
   await flushPendingSaves(); 
   hidePanels(); document.getElementById('byTypeWrapper').style.display = 'block';
-  document.getElementById('byTypeCard').innerHTML = '<div style="text-align:center; color:#94a3b8; padding:20px;">불러오는 중...</div>';
-  const res = await api({ action:'getAllData', requesterId: currentUser.id });
-  if (!res.ok) { document.getElementById('byTypeCard').innerHTML = `<div style="color:#ef4444;">${res.error}</div>`; return; }
-  byTypeCache = res;
-  const types = Object.keys(JOURNAL_TYPES);
-  document.getElementById('byTypeCard').innerHTML = `
-    <h2 style="margin:0 0 14px;">주기화별로 보기</h2>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; position:relative; z-index:100;">
-      <select id="byTypeType" onchange="onByTypeTypeChange()" style="flex:1; min-width:120px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;">${types.map(t=>`<option value="${t}">${JOURNAL_TYPES[t].title}</option>`).join('')}</select>
-      <select id="byTypeWeek" onchange="onByTypeWeekChange()" style="flex:1; min-width:160px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;"><option value="">-- 저장된 바퀴에서 선택 --</option></select>
-      <span style="font-size:11px; color:#94a3b8; padding:0 4px;">또는</span>
-      <input type="date" id="byTypeDate" onchange="onByTypeDateChange()" style="flex:1; min-width:140px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;">
-    </div>
-    <div id="byTypeResults"></div>`;
-  refreshByTypeWeeks();
+
+  function renderByTypeShell() {
+    const types = Object.keys(JOURNAL_TYPES);
+    document.getElementById('byTypeCard').innerHTML = `
+      <h2 style="margin:0 0 14px;">주기화별로 보기</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; position:relative; z-index:100;">
+        <select id="byTypeType" onchange="onByTypeTypeChange()" style="flex:1; min-width:120px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;">${types.map(t=>`<option value="${t}">${JOURNAL_TYPES[t].title}</option>`).join('')}</select>
+        <select id="byTypeWeek" onchange="onByTypeWeekChange()" style="flex:1; min-width:160px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;"><option value="">-- 저장된 바퀴에서 선택 --</option></select>
+        <span style="font-size:11px; color:#94a3b8; padding:0 4px;">또는</span>
+        <input type="date" id="byTypeDate" onchange="onByTypeDateChange()" style="flex:1; min-width:140px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;">
+      </div>
+      <div id="byTypeResults"></div>`;
+    refreshByTypeWeeks();
+  }
+
+  if (byTypeCache && byTypeCache.users) {
+    renderByTypeShell();
+  } else {
+    document.getElementById('byTypeCard').innerHTML = '<div style="padding:20px 0;"><div class="dash-skeleton-cell" style="width:160px; height:24px; margin-bottom:16px;"></div><div class="dash-skeleton-cell" style="width:100%; height:45px;"></div></div>';
+  }
+
+  const res = await api({ action:'getAllData', requesterId: currentUser.id }, true);
+  if (res && res.ok) {
+    byTypeCache = res;
+    renderByTypeShell();
+  }
 }
 function refreshByTypeWeeks(){
   const type = document.getElementById('byTypeType').value;
