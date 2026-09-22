@@ -627,9 +627,11 @@ async function importSheetData(){
 }
 
 window.onload = () => {
-  const dbMode = localStorage.getItem('tj_db_mode') || 'firebase';
+  // 기본적으로 강력하고 안정적인 Firebase 클라우드 DB 모드를 우선 적용
+  let dbMode = localStorage.getItem('tj_db_mode');
   let url = localStorage.getItem('tj_url');
-  if (dbMode !== 'sheet' || !url || !url.startsWith('http')) {
+  if (!dbMode || dbMode === 'firebase' || !url || url === '/api' || !url.startsWith('http')) {
+    dbMode = 'firebase';
     url = DEFAULT_BACKEND_URL;
     localStorage.setItem('tj_db_mode', 'firebase');
     localStorage.setItem('tj_url', url);
