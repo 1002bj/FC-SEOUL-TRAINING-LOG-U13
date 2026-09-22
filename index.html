@@ -671,8 +671,8 @@ async function api(payload, silent){
   const isSheet = url !== '/api';
   if (!silent) loading(true, '서버와 통신 중...');
   
-  let retries = 4;
-  let delay = 800;
+  let retries = 5;
+  let delay = 1000;
   
   while (retries > 0) {
     try {
@@ -708,12 +708,12 @@ async function api(payload, silent){
       
     } catch (err) {
       retries--;
-      const isStarting = err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch');
+      const isStarting = err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
       
       if (retries > 0 && isStarting) {
-        if (!silent) loading(true, `서버 연결 준비 중... (${4 - retries}/3)`);
+        if (!silent) loading(true, `서버 연결 대기 중... (${5 - retries}/4)`);
         await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 1.5, 2500);
+        delay = Math.min(delay * 1.5, 3000);
         continue;
       }
       
@@ -727,8 +727,8 @@ async function api(payload, silent){
               location.reload();
               return { ok: false, error: 'Firebase 모드로 전환되었습니다.' };
             }
-          } else if (err.message === 'SERVER_STARTING' || err.message.includes('Failed to fetch')) {
-            await uiAlert('서버가 재시작되었거나 연결이 일시적으로 지연되었습니다.\n페이지를 새로고침하거나 잠시 후 다시 시도해주세요.', '연결 지연 안내');
+          } else if (err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch')) {
+            uiToast('일시적 네트워크 지연이 있습니다. 잠시 후 자동으로 반영됩니다.', 'info');
           } else {
             await uiAlert('서버 통신 오류:\n' + err.message, '오류 안내');
           }
