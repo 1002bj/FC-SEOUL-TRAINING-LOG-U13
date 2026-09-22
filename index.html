@@ -781,12 +781,25 @@ async function doLogin(){
   const pw = document.getElementById('loginPw').value;
   const err = document.getElementById('loginError'); err.innerText = '';
   if (!id || !pw) { err.innerText = '아이디와 비밀번호를 입력해주세요.'; return; }
+
+  // Show inline progress indicator
+  err.style.color = '#0284c7';
+  err.innerText = '로그인 확인 중...';
+
   const res = await api({ action:'login', id, pw });
-  if (res.ok) { 
+  if (res && res.ok) { 
+    err.innerText = '';
     if(document.getElementById('saveIdCheck').checked) localStorage.setItem('tj_saved_id', id);
     else localStorage.removeItem('tj_saved_id');
     setUser(res.user); 
-  } else err.innerText = res.error; 
+  } else {
+    err.style.color = 'var(--red)';
+    if (res && (res.error === 'SERVER_STARTING' || res.error?.includes('Failed to fetch'))) {
+      err.innerText = '서버 접속 준비 중입니다. 잠시 후 다시 클릭해주세요.';
+    } else {
+      err.innerText = res?.error || '로그인에 실패했습니다.';
+    }
+  }
 }
 
 async function doRegister(){

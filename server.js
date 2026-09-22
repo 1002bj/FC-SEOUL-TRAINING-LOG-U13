@@ -37,14 +37,10 @@ app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 // Static file serving
 app.use(express.static(__dirname));
 
-// Ensure test connection & default admin account
+// Run background initialization without blocking
 async function initDatabase() {
   try {
-    const testRef = doc(db, 'test', 'connection');
-    await setDoc(testRef, { connected: true, timestamp: new Date().toISOString() }, { merge: true });
-    console.log('[Firebase] Connected successfully to Firestore database:', firebaseConfig.firestoreDatabaseId);
-
-    // Ensure default admin user exists
+    // Ensure default admin user exists immediately
     const adminRef = doc(db, 'users', 'admin');
     const adminSnap = await getDoc(adminRef);
     if (!adminSnap.exists()) {
@@ -60,66 +56,66 @@ async function initDatabase() {
       });
       console.log('[Firebase] Initial admin account created (id: admin)');
     } else {
-      // Ensure granted and isAdmin are true
       const admData = adminSnap.data();
       if (!admData.granted || !admData.isAdmin) {
         await updateDoc(adminRef, { granted: true, isAdmin: true });
       }
     }
-    // If users collection has only admin or is empty, automatically seed existing spreadsheet data
+    console.log('[Firebase] Connected successfully to Firestore database:', firebaseConfig.firestoreDatabaseId);
+
+    // Check if migration is needed in background
     const existingUsersSnap = await getDocs(collection(db, 'users'));
-    const userDocs = [];
-    existingUsersSnap.forEach(d => userDocs.push(d.data()));
-    const nonAdminUsers = userDocs.filter(u => u.id !== 'admin');
+    let hasOtherUsers = false;
+    existingUsersSnap.forEach(d => {
+      if (d.data().id !== 'admin') hasOtherUsers = true;
+    });
 
-    if (nonAdminUsers.length === 0) {
-      console.log('[Firebase Sync] Empty database detected. Auto-migrating data from primary spreadsheet...');
+    if (!hasOtherUsers) {
+      console.log('[Firebase Sync] Empty database detected. Background migrating from primary spreadsheet...');
       const sheetUrl = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
-      try {
-        const gasRes = await fetch(sheetUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' })
-        });
-        const gasData = await gasRes.json();
-        if (gasData && gasData.ok) {
-          if (Array.isArray(gasData.users)) {
-            for (const u of gasData.users) {
-              if (u.id) {
-                const uRef = doc(db, 'users', String(u.id));
-                await setDoc(uRef, {
-                  id: String(u.id),
-                  pw: u.pw || '1234',
-                  name: u.name || String(u.id),
-                  role: u.role || 'player',
-                  photo: u.photo || '',
-                  granted: u.granted !== false,
-                  isAdmin: u.isAdmin === true || String(u.id) === 'admin',
-                  createdAt: new Date().toISOString()
-                }, { merge: true });
-              }
+      const gasRes = await fetch(sheetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' })
+      });
+      const gasData = await gasRes.json();
+      if (gasData && gasData.ok) {
+        if (Array.isArray(gasData.users)) {
+          for (const u of gasData.users) {
+            if (u.id) {
+              const uRef = doc(db, 'users', String(u.id));
+              await setDoc(uRef, {
+                id: String(u.id),
+                pw: u.pw || '1234',
+                name: u.name || String(u.id),
+                role: u.role || 'player',
+                photo: u.photo || '',
+                granted: u.granted !== false,
+                isAdmin: u.isAdmin === true || String(u.id) === 'admin',
+                createdAt: new Date().toISOString()
+              }, { merge: true });
             }
-            console.log(`[Firebase Sync] Migrated ${gasData.users.length} users successfully.`);
           }
-
-          if (Array.isArray(gasData.entries)) {
-            for (const e of gasData.entries) {
-              const entryId = e.entryId || `entry_${e.playerId}_${e.type}_${e.weekStartDate}_${Date.now()}`;
-              e.entryId = entryId;
-              await setDoc(doc(db, 'entries', entryId), e, { merge: true });
-            }
-            console.log(`[Firebase Sync] Migrated ${gasData.entries.length} entries successfully.`);
-          }
+          console.log(`[Firebase Sync] Migrated ${gasData.users.length} users successfully.`);
         }
-      } catch (syncErr) {
-        console.warn('[Firebase Sync Notice]', syncErr.message);
+
+        if (Array.isArray(gasData.entries)) {
+          for (const e of gasData.entries) {
+            const entryId = e.entryId || `entry_${e.playerId}_${e.type}_${e.weekStartDate}_${Date.now()}`;
+            e.entryId = entryId;
+            await setDoc(doc(db, 'entries', entryId), e, { merge: true });
+          }
+          console.log(`[Firebase Sync] Migrated ${gasData.entries.length} entries successfully.`);
+        }
       }
     }
   } catch (err) {
     console.warn('[Firebase] Database initialization notice:', err.message);
   }
 }
-initDatabase();
+setTimeout(() => {
+  initDatabase().catch(err => console.warn('[Firebase background init error]', err));
+}, 100);
 
 // File retrieval endpoint for uploaded photos / videos
 app.get('/api/files/:id', async (req, res) => {
