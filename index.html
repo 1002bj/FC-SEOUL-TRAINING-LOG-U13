@@ -299,27 +299,6 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
       <p>선수 개인 훈련일지 (패스 · 터치 · 드리블 주기화 · 포토 일지)</p>
     </div>
     <div class="login-body">
-      <div class="cfg-box" id="backendConfigBox" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px;">
-          <span style="font-weight:bold; color:var(--black);"><i class="fa fa-database" style="color:var(--red);"></i> 저장소: <span id="currentDbLabel" style="color:#16a34a;">Firebase (클라우드 DB)</span></span>
-          <button type="button" class="btn btn-outline" style="width:auto; padding:3px 8px; font-size:10px; margin:0;" onclick="toggleDbConfig()"><i class="fa fa-cog"></i> 저장소 설정/이관</button>
-        </div>
-        <div id="dbConfigPanel" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #cbd5e1; font-size:11px;">
-          <div style="margin-bottom:8px; line-height:1.5; color:#64748b;">
-            🛡️ <b>데이터 보존 원칙</b>: 기존 구글 스프레드시트의 원본 데이터는 전혀 삭제되거나 변동되지 않고 안전하게 유지됩니다.
-          </div>
-          <label style="font-size:10.5px; font-weight:bold; color:#334155; margin-bottom:4px; display:block;">기존 구글 스프레드시트 웹앱 URL (선택사항)</label>
-          <input type="text" id="customSheetUrl" value="https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec" placeholder="https://script.google.com/macros/s/.../exec" style="font-size:11px; padding:6px; margin-bottom:8px; width:100%; box-sizing:border-box;">
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="btn btn-black" style="width:auto; flex:1; font-size:11px; padding:6px 10px; margin:0;" onclick="importSheetData()"><i class="fa fa-file-import"></i> 스프레드시트 데이터 가져오기</button>
-            <button type="button" class="btn btn-outline" style="width:auto; font-size:11px; padding:6px 10px; margin:0;" onclick="useDirectSheet()"><i class="fa fa-table"></i> 스프레드시트 직접 사용</button>
-            <button type="button" class="btn btn-outline" style="width:auto; font-size:11px; padding:6px 10px; margin:0; border-color:#16a34a; color:#16a34a;" onclick="useFirebase()"><i class="fa fa-fire"></i> Firebase 사용</button>
-          </div>
-        </div>
-        <input type="hidden" id="backendUrl" value="/api">
-      </div>
-      <hr style="margin:14px 0; border:0; border-top:1px solid #eee;">
-      
       <div id="loginForm">
         <label>아이디</label>
         <input type="text" id="loginId">
@@ -594,68 +573,9 @@ function uiToast(msg, type='success') {
   clearTimeout(el._t); el._t = setTimeout(()=> el.className='', 2500);
 }
 
-function toggleDbConfig(){
-  const panel = document.getElementById('dbConfigPanel');
-  if(panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
-function updateDbLabel(){
-  const mode = localStorage.getItem('tj_db_mode') || 'firebase';
-  const label = document.getElementById('currentDbLabel');
-  if(label){
-    label.innerText = mode === 'sheet' ? '구글 스프레드시트 (직접 연결)' : 'Firebase (클라우드 DB)';
-    label.style.color = mode === 'sheet' ? '#0284c7' : '#16a34a';
-  }
-}
-
-function useFirebase(){
+window.onload = () => {
   localStorage.setItem('tj_db_mode', 'firebase');
   localStorage.setItem('tj_url', '/api');
-  updateDbLabel();
-  uiToast('Firebase 클라우드 DB 모드로 설정되었습니다.');
-}
-
-async function useDirectSheet(){
-  const url = document.getElementById('customSheetUrl').value.trim();
-  if(!url){ await uiAlert('구글 스프레드시트 웹앱 URL을 입력해주세요.'); return; }
-  localStorage.setItem('tj_db_mode', 'sheet');
-  localStorage.setItem('tj_url', url);
-  updateDbLabel();
-  uiToast('구글 스프레드시트 직접 연결로 설정되었습니다.');
-}
-
-async function importSheetData(){
-  const url = document.getElementById('customSheetUrl').value.trim();
-  if(!url){ await uiAlert('데이터를 가져올 구글 스프레드시트 웹앱 URL을 입력해주세요.'); return; }
-  loading(true, '구글 스프레드시트에서 데이터를 안전하게 불러오는 중...');
-  try {
-    const data = await api({ action: 'importFromGoogleSheets', sheetUrl: url });
-    loading(false);
-    if(data && data.ok){
-      await uiAlert(data.message + '\n\n기존 구글 스프레드시트의 원본 데이터는 전혀 변동 없이 안전하게 보존되어 있습니다.', '데이터 이관 완료');
-      useFirebase();
-    } else {
-      await uiAlert(data?.error || '데이터를 가져오지 못했습니다.', '가져오기 실패');
-    }
-  } catch(e) {
-    loading(false);
-    await uiAlert('서버 통신 실패: ' + e.message, '오류');
-  }
-}
-
-window.onload = () => {
-  // 기본적으로 강력하고 안정적인 Firebase 클라우드 DB 모드를 우선 적용
-  let dbMode = localStorage.getItem('tj_db_mode');
-  let url = localStorage.getItem('tj_url');
-  if (!dbMode || dbMode === 'firebase' || !url || url === '/api' || !url.startsWith('http')) {
-    dbMode = 'firebase';
-    url = DEFAULT_BACKEND_URL;
-    localStorage.setItem('tj_db_mode', 'firebase');
-    localStorage.setItem('tj_url', url);
-  }
-  const customInput = document.getElementById('customSheetUrl');
-  if(customInput && url && url !== '/api') customInput.value = url;
-  updateDbLabel();
 
   const savedId = localStorage.getItem('tj_saved_id');
   if(savedId) {
@@ -666,7 +586,7 @@ window.onload = () => {
     }
   }
   const savedUser = JSON.parse(localStorage.getItem('tj_user') || 'null');
-  if (savedUser && url) { currentUser = savedUser; enterApp(); }
+  if (savedUser) { currentUser = savedUser; enterApp(); }
 };
 
 function toggleForm(which){
@@ -677,17 +597,11 @@ function toggleForm(which){
   if(which==='find') document.getElementById('findIdResult').innerText = '';
 }
 function backendUrl(){
-  const mode = localStorage.getItem('tj_db_mode') || 'firebase';
-  if(mode === 'sheet') {
-    const sheetUrl = localStorage.getItem('tj_url');
-    if (sheetUrl && sheetUrl.startsWith('http')) return sheetUrl;
-  }
   return '/api';
 }
 
 async function api(payload, silent){
-  const url = backendUrl();
-  const isSheet = url !== '/api';
+  const url = '/api';
   if (!silent) loading(true);
   
   let retries = 5;
@@ -697,7 +611,7 @@ async function api(payload, silent){
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: isSheet ? { 'Content-Type': 'text/plain;charset=utf-8' } : { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       
@@ -709,12 +623,6 @@ async function api(payload, silent){
       } catch (jsonErr) {
         const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
         if (isHtml) {
-          if (res.status === 502 || res.status === 503 || res.status === 504 || text.includes('502 Bad Gateway') || text.includes('503 Service')) {
-            throw new Error('SERVER_STARTING');
-          }
-          if (isSheet) {
-            throw new Error('SHEET_HTML_ERROR');
-          }
           throw new Error('SERVER_STARTING');
         }
         throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
@@ -738,14 +646,7 @@ async function api(payload, silent){
       if (retries === 0 || !isStarting) {
         if (!silent) {
           loading(false);
-          if (err.message === 'SHEET_HTML_ERROR') {
-            const reset = await uiConfirm('구글 스프레드시트 웹앱에서 HTML(로그인/권한 오류) 응답이 반환되었습니다.\n\n안정적인 Firebase 클라우드 DB 모드로 전환하시겠습니까?', '연결 오류');
-            if (reset) {
-              useFirebase();
-              location.reload();
-              return { ok: false, error: 'Firebase 모드로 전환되었습니다.' };
-            }
-          } else if (err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch')) {
+          if (err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch')) {
             console.warn('[Network] Connection delay detected, silent recovery active.');
           } else {
             console.error('[API Error]', err);
