@@ -391,18 +391,20 @@ app.post('/api', async (req, res) => {
 
       // 21. 파일 / 사진 / 동영상 업로드
       case 'uploadFile': {
-        const { base64, filename, mimeType } = payload;
-        if (!base64) return res.json({ ok: false, error: '파일 데이터가 없습니다.' });
+        const fileContent = payload.base64 || payload.fileData || payload.data;
+        const fname = payload.filename || payload.fileName || 'file';
+        const mtype = payload.mimeType || payload.fileType || 'application/octet-stream';
+        if (!fileContent) return res.json({ ok: false, error: '파일 데이터가 없습니다.' });
         const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
         await setDoc(doc(db, 'files', fileId), {
           fileId,
-          filename: filename || 'file',
-          mimeType: mimeType || 'application/octet-stream',
-          data: base64,
+          filename: fname,
+          mimeType: mtype,
+          data: fileContent,
           createdAt: new Date().toISOString()
         });
         const viewUrl = `/api/files/${fileId}`;
-        return res.json({ ok: true, viewUrl, directUrl: viewUrl });
+        return res.json({ ok: true, viewUrl, directUrl: viewUrl, fileUrl: viewUrl });
       }
 
       // 19. 구글 스프레드시트 데이터 안전하게 Firebase로 가져오기 (마이그레이션)
@@ -506,9 +508,24 @@ app.post('/api', async (req, res) => {
   }
 });
 
-// SPA fallback to index.html
+// API fallback for undefined API routes to ensure JSON response instead of HTML
+app.all('/api*', (req, res) => {
+  res.status(404).json({ ok: false, error: `API 엔드포인트를 찾을 수 없습니다: ${req.method} ${req.originalUrl}` });
+});
+
+// SPA fallback to index.html for page routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Global Express error handler to prevent HTML error responses
+app.use((err, req, res, next) => {
+  console.error('Express Server Error:', err);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 500).json({
+    ok: false,
+    error: err.message || '서버 처리 중 오류가 발생했습니다.'
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
