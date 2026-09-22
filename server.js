@@ -364,10 +364,11 @@ app.post('/api', async (req, res) => {
 
       // 20. 전체 대시보드 데이터 조회
       case 'getAllData': {
-        const [usersSnap, entriesSnap, matchesSnap] = await Promise.all([
+        const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await Promise.all([
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'entries')),
-          getDocs(collection(db, 'matchEvaluations'))
+          getDocs(collection(db, 'matchEvaluations')),
+          getDocs(collection(db, 'diaries'))
         ]);
         const users = [];
         usersSnap.forEach(d => {
@@ -386,7 +387,9 @@ app.post('/api', async (req, res) => {
         const matches = [];
         matchesSnap.forEach(d => matches.push(d.data()));
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
-        return res.json({ ok: true, users, entries, matches });
+        const diaries = [];
+        diariesSnap.forEach(d => diaries.push(d.data()));
+        return res.json({ ok: true, users, entries, matches, diaries });
       }
 
       // 21. 파일 / 사진 / 동영상 업로드

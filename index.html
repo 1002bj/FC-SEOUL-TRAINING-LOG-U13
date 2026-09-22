@@ -1045,14 +1045,20 @@ async function createEntry(){
 }
 
 function loadEntry(entryId){
-  api({ action:'getEntry', entryId }).then(async res => {
+  loading(true, '일지를 불러오는 중입니다...');
+  api({ action:'getEntry', entryId }, true).then(async res => {
+    loading(false);
     if (!res.ok) { await uiAlert(res.error, '오류'); return; }
     currentEntry = res.entry; currentEntry.entryId = entryId; currentType = currentEntry.type || currentType;
     applySafeguards(); calculateAverages(); 
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
     currentMobileTab = 0; expandedAccordionDay = null; renderJournal();
-  }).catch(err => { console.error(err); uiAlert('일지를 불러오는 중 에러가 발생했습니다: ' + err); });
+  }).catch(err => { 
+    loading(false);
+    console.error(err); 
+    uiAlert('일지를 불러오는 중 에러가 발생했습니다: ' + err); 
+  });
 }
 
 function setMobileTab(index) {
@@ -2217,10 +2223,13 @@ async function showDashboard(){
   if (!res.ok) { await uiAlert(res.error, '오류'); return; }
 
   const players = res.users.filter(u => u.role==='player');
-  const diariesPromises = players.map(p => api({ action: 'listDiary', playerId: p.id }, true));
-  const diariesResponses = await Promise.all(diariesPromises);
   const allDiariesMap = {};
-  players.forEach((p, idx) => { allDiariesMap[p.id] = diariesResponses[idx].ok ? diariesResponses[idx].diary.map(d => { if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0]; return d; }) : []; });
+  players.forEach(p => {
+    allDiariesMap[p.id] = (res.diaries || []).filter(d => d.playerId === p.id).map(d => {
+      if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
+      return d;
+    });
+  });
 
   const pendingFeedbacks = res.entries.filter(e => { const noText = !e.coachFeedback || e.coachFeedback.trim() === ''; return noText; }).sort((a,b) => new Date(b.weekStartDate) - new Date(a.weekStartDate));
   let pendingHtml = '';
@@ -2617,15 +2626,9 @@ async function exportExcel(){
   if (!res.ok) { loading(false); await uiAlert(res.error, '오류'); return; }
 
   const players = res.users.filter(u => u.role === 'player');
-
-  let allDiaries = [];
-  const diariesPromises = players.map(p => api({ action: 'listDiary', playerId: p.id }, true));
-  const diariesResponses = await Promise.all(diariesPromises);
-  players.forEach((p, idx) => {
-    if (diariesResponses[idx].ok) {
-      const dList = diariesResponses[idx].diary.map(d => ({ ...d, playerName: p.name }));
-      allDiaries = allDiaries.concat(dList);
-    }
+  const allDiaries = (res.diaries || []).map(d => {
+    const p = players.find(x => x.id === d.playerId);
+    return { ...d, playerName: p ? p.name : (d.playerName || d.playerId) };
   });
 
   const summary = res.entries.map(e => ({
