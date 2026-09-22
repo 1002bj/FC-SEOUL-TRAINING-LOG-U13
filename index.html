@@ -604,7 +604,7 @@ async function api(payload, silent){
   const url = '/api';
   if (!silent) loading(true);
   
-  let retries = 5;
+  let retries = 3;
   let delay = 1000;
   
   while (retries > 0) {
@@ -621,36 +621,35 @@ async function api(payload, silent){
       try {
         data = JSON.parse(text);
       } catch (jsonErr) {
+        if (!res.ok) {
+          throw new Error(`서버 응답 오류 (${res.status}): ` + (text.slice(0, 100) || ''));
+        }
         const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
         if (isHtml) {
-          throw new Error('SERVER_STARTING');
+          throw new Error('서버 접속 중입니다. 잠시 후 다시 시도해주세요.');
         }
         throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
       }
       
       if (!silent) loading(false);
-      if (data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
-      if (data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+      if (data && data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
+      if (data && data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
       return data;
       
     } catch (err) {
       retries--;
-      const isStarting = err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
+      const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
       
-      if (retries > 0 && isStarting) {
+      if (retries > 0 && isNetworkErr) {
         await new Promise(r => setTimeout(r, delay));
         delay = Math.min(delay * 1.5, 3000);
         continue;
       }
       
-      if (retries === 0 || !isStarting) {
+      if (retries === 0 || !isNetworkErr) {
         if (!silent) {
           loading(false);
-          if (err.message === 'SERVER_STARTING' || err.name === 'TypeError' || err.message.includes('Failed to fetch')) {
-            console.warn('[Network] Connection delay detected, silent recovery active.');
-          } else {
-            console.error('[API Error]', err);
-          }
+          console.error('[API Error]', err);
         }
         return { ok: false, error: String(err.message || err) };
       }
@@ -794,11 +793,7 @@ async function doLogin(){
     setUser(res.user); 
   } else {
     err.style.color = 'var(--red)';
-    if (res && (res.error === 'SERVER_STARTING' || res.error?.includes('Failed to fetch'))) {
-      err.innerText = '서버 접속 준비 중입니다. 잠시 후 다시 클릭해주세요.';
-    } else {
-      err.innerText = res?.error || '로그인에 실패했습니다.';
-    }
+    err.innerText = res?.error || '로그인에 실패했습니다. 아이디와 비밀번호를 확인해주세요.';
   }
 }
 
