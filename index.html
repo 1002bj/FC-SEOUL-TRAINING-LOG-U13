@@ -318,11 +318,6 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
           <span class="toggle-link" style="margin:0;" onclick="toggleForm('find')">아이디/비밀번호 찾기</span>
           <span class="toggle-link" style="margin:0;" onclick="toggleForm('register')">회원가입</span>
         </div>
-        <div style="margin-top:16px; padding:10px 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; font-size:11px; color:#64748b; line-height:1.6;">
-          <div style="font-weight:bold; color:var(--black); margin-bottom:4px;"><i class="fa fa-info-circle" style="color:var(--red);"></i> 테스트 계정 바로 로그인:</div>
-          <div>• <b>지도자(관리자)</b>: <a href="javascript:void(0)" onclick="document.getElementById('loginId').value='coach1'; document.getElementById('loginPw').value='1234'; doLogin();" style="color:var(--red); text-decoration:underline;">coach1 / 1234</a></div>
-          <div>• <b>선수</b>: <a href="javascript:void(0)" onclick="document.getElementById('loginId').value='player1'; document.getElementById('loginPw').value='1234'; doLogin();" style="color:#0284c7; text-decoration:underline;">player1 / 1234</a></div>
-        </div>
       </div>
       
       <div id="findForm" style="display:none;">
@@ -383,6 +378,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
         <div class="actions-row" id="journalActionsRow"></div>
         <div id="journalCard"></div>
       </div>
+      <div id="matchWrapper" style="display:none;"><div id="matchCard" class="card" style="border-top:10px solid var(--red); max-width: 900px;"></div></div>
       <div id="diaryViewWrapper" style="display:none;"><div id="diaryViewCard"></div></div>
       <div id="emptyMsg" class="empty">왼쪽에서 메뉴를 선택해보세요.</div>
     </div>
@@ -498,14 +494,14 @@ function applySafeguards() {
   currentEntry.coachFeedback = currentEntry.coachFeedback || '';
 }
 
-// 셀별 상태값(normal/rest/injury)을 기준으로 평균 계산
+// 셀별 상태값(normal/rest/injury/gym)을 기준으로 평균 계산
 function calculateAverages() {
   const cats = JOURNAL_TYPES[currentEntry.type].categories;
   cats.forEach((c, ci) => {
     let attSum = 0, sucSum = 0, activeDays = 0;
     DAYS.forEach(d => {
       const status = currentEntry.dayStatus[d][ci] || 'normal';
-      if (status === 'rest' || status === 'injury') return;
+      if (status === 'rest' || status === 'injury' || status === 'gym') return;
 
       const att = parseInt(currentEntry.dailyAttempts[d][ci]) || 0;
       const suc = parseInt(currentEntry.dailySuccesses[d][ci]) || 0;
@@ -870,7 +866,7 @@ function showPendingScreen(){
 }
 
 function hidePanels(){
-  ['journalWrapper','dashboardWrapper','byTypeWrapper','analyticsWrapper','diaryViewWrapper','emptyMsg'].forEach(id => {
+  ['journalWrapper','dashboardWrapper','byTypeWrapper','analyticsWrapper','matchWrapper','diaryViewWrapper','emptyMsg'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -887,6 +883,7 @@ function renderPlayerSidebar(){
   document.getElementById('sidebar').innerHTML = `
     <div class="mode-toggle">
       <button id="modeCycle" onclick="switchMode('cycle')">📋 주기화</button>
+      <button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button>
       <button id="modeDiary" onclick="switchMode('diary')">📷 일지</button>
     </div>
     <div id="sidebarBody"></div>`;
@@ -897,12 +894,22 @@ async function switchMode(mode){
   await flushPendingSaves(); 
   sidebarMode = mode;
   const btnCycle = document.getElementById('modeCycle');
+  const btnMatch = document.getElementById('modeMatch');
   const btnDiary = document.getElementById('modeDiary');
   if(btnCycle) btnCycle.classList.toggle('active', mode==='cycle');
+  if(btnMatch) btnMatch.classList.toggle('active', mode==='match');
   if(btnDiary) btnDiary.classList.toggle('active', mode==='diary');
-  currentEntry = null; showEmpty();
-  if (mode !== 'cycle') currentUser.role === 'player' ? renderDiaryBody() : renderCoachDiaryBody(); 
-  else renderCycleBody(); 
+  currentEntry = null; 
+  if (mode === 'match') {
+    renderMatchSidebar();
+    showMatchEvaluation();
+  } else if (mode === 'diary') {
+    showEmpty();
+    currentUser.role === 'player' ? renderDiaryBody() : renderCoachDiaryBody(); 
+  } else {
+    showEmpty();
+    renderCycleBody(); 
+  }
 }
 
 function renderCycleBody(){
@@ -1053,20 +1060,25 @@ function renderJournal(){
       const att = (currentEntry.dailyAttempts[d]||[])[ci] || 0;
       const suc = (currentEntry.dailySuccesses[d]||[])[ci] || 0;
       const status = currentEntry.dayStatus[d][ci] || 'normal';
-      const cellOpacity = status === 'normal' ? '1' : '0.4';
+      const cellOpacity = (status === 'normal' || status === 'gym') ? '1' : '0.4';
       
       // 🌟 각 칸 내부에 상태 선택(day-status-select)을 독립적으로 렌더링
       html += `<td class="goal-cell col-cycle col-cycle-${ci}" data-label="${c}" style="opacity: ${cellOpacity}; transition: opacity 0.3s;">
         <select class="day-status-select" data-day="${d}" data-ci="${ci}" onchange="updateDayStatusLocal(this)" ${isPlayer?'':'disabled'}>
           <option value="normal" ${status==='normal'?'selected':''}>💪 훈련 참여</option>
+          <option value="gym" ${status==='gym'?'selected':''}>🏋️ 헬스장</option>
           <option value="rest" ${status==='rest'?'selected':''}>💤 휴식</option>
           <option value="injury" ${status==='injury'?'selected':''}>🚑 부상</option>
         </select>
-        <textarea data-day="${d}" data-ci="${ci}" onkeyup="updateGoalLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${c} 관련 목표 작성">${esc(val)}</textarea>
+        <textarea data-day="${d}" data-ci="${ci}" onkeyup="updateGoalLocal(this)" onblur="scheduleAutoSave()" ${isPlayer?'':'disabled'} placeholder="${status==='gym'?'🏋️ 헬스장 훈련 내용 작성':c+' 관련 목표 작성'}">${esc(val)}</textarea>
+        ${status === 'gym' ? `
+        <div class="daily-stats-row" style="background:#f1f5f9; padding:5px 8px; border-radius:4px; font-size:11px; color:#475569; display:flex; align-items:center; justify-content:center; gap:4px; font-weight:bold;">
+          <i class="fa fa-dumbbell" style="color:#64748b;"></i> 헬스장 (평가 제외)
+        </div>` : `
         <div class="daily-stats-row">
           <div class="daily-stat att"><span>시도</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${att}" onfocus="if(this.value==='0') this.value='';" onblur="if(this.value==='') this.value='0'; updateDailyStatLocal(this, 'att'); scheduleAutoSave();" onkeyup="updateDailyStatLocal(this, 'att')" onchange="updateDailyStatLocal(this, 'att')" ${isPlayer?'':'disabled'}></div>
           <div class="daily-stat suc"><span>성공</span><input type="number" min="0" data-day="${d}" data-ci="${ci}" value="${suc}" onfocus="if(this.value==='0') this.value='';" onblur="if(this.value==='') this.value='0'; updateDailyStatLocal(this, 'suc'); scheduleAutoSave();" onkeyup="updateDailyStatLocal(this, 'suc')" onchange="updateDailyStatLocal(this, 'suc')" ${isPlayer?'':'disabled'}></div>
-        </div>
+        </div>`}
       </td>`;
     });
     html += `</tr>`;
@@ -1113,6 +1125,10 @@ function updateDayStatusLocal(el) {
   const d = el.dataset.day;
   const ci = parseInt(el.dataset.ci);
   currentEntry.dayStatus[d][ci] = el.value;
+  if (el.value === 'gym' || el.value === 'rest' || el.value === 'injury') {
+    if (currentEntry.dailyAttempts && currentEntry.dailyAttempts[d]) currentEntry.dailyAttempts[d][ci] = 0;
+    if (currentEntry.dailySuccesses && currentEntry.dailySuccesses[d]) currentEntry.dailySuccesses[d][ci] = 0;
+  }
   calculateAverages();
   renderJournal(); 
   scheduleAutoSave();
@@ -1324,7 +1340,7 @@ async function loadCycleForDiary(diaryId, dateString, playerId) {
                         const att = entry.dailyAttempts && entry.dailyAttempts[searchDay] ? entry.dailyAttempts[searchDay][ci] : 0;
                         const suc = entry.dailySuccesses && entry.dailySuccesses[searchDay] ? entry.dailySuccesses[searchDay][ci] : 0;
                         const status = entry.dayStatus && entry.dayStatus[searchDay] && entry.dayStatus[searchDay][ci] ? entry.dayStatus[searchDay][ci] : 'normal';
-                        const statusText = status === 'rest' ? '[💤 휴식]' : status === 'injury' ? '[🚑 부상]' : '';
+                        const statusText = status === 'rest' ? '[💤 휴식]' : status === 'injury' ? '[🚑 부상]' : status === 'gym' ? '[🏋️ 헬스장]' : '';
 
                         if((goal && goal.trim()) || att > 0 || suc > 0 || status !== 'normal') {
                             hasData = true; foundAny = true;
@@ -1442,10 +1458,643 @@ async function deleteDiary(diaryId){
   if (res.ok) { uiToast('삭제 완료되었습니다.'); await loadDiaryList(); document.getElementById('calDetail').style.display = 'none'; document.getElementById('calDetailEmpty').style.display = 'block'; } else await uiAlert(res.error, '삭제 오류');
 }
 
+/* ========================================================
+   ⚽ 경기 평가 시스템 (Match Evaluation System)
+   ======================================================== */
+const PITCH_POSITIONS = [
+  { id: 'LW', label: 'LW', x: 20, y: 19 },
+  { id: 'ST', label: 'ST', x: 50, y: 13 },
+  { id: 'RW', label: 'RW', x: 80, y: 19 },
+  { id: 'LCM', label: 'LCM', x: 32, y: 38 },
+  { id: 'RCM', label: 'RCM', x: 68, y: 38 },
+  { id: 'DM', label: 'DM', x: 50, y: 53 },
+  { id: 'LB', label: 'LB', x: 18, y: 72 },
+  { id: 'LCB', label: 'LCB', x: 38, y: 75 },
+  { id: 'RCB', label: 'RCB', x: 62, y: 75 },
+  { id: 'RB', label: 'RB', x: 82, y: 72 },
+  { id: 'GK', label: 'GK', x: 50, y: 91 }
+];
+
+let matchEvaluationsCache = [];
+let editingMatchId = null;
+let selectedMatchPos = { first: 'DM', second: 'LB' };
+let currentMatchPlayerPhoto = '';
+
+function getPitchSvg() {
+  return `
+    <svg viewBox="0 0 300 360" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;">
+      <!-- Outer boundary -->
+      <rect x="15" y="15" width="270" height="330" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <!-- Halfway line -->
+      <line x1="15" y1="180" x2="285" y2="180" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <!-- Center circle & spot -->
+      <circle cx="150" cy="180" r="42" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <circle cx="150" cy="180" r="3.5" fill="rgba(255,255,255,0.85)"/>
+      <!-- Top penalty area & goal area -->
+      <rect x="70" y="15" width="160" height="60" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <rect x="105" y="15" width="90" height="22" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <path d="M 120 75 A 35 35 0 0 0 180 75" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <!-- Bottom penalty area & goal area -->
+      <rect x="70" y="285" width="160" height="60" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <rect x="105" y="323" width="90" height="22" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <path d="M 120 285 A 35 35 0 0 1 180 285" fill="none" stroke="rgba(255,255,255,0.75)" stroke-width="2"/>
+      <!-- Forward line (LW - ST - RW) -->
+      <path d="M 60 70 L 150 48 L 240 70" fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1.5" stroke-dasharray="4,4"/>
+    </svg>
+  `;
+}
+
+function renderPitch(containerId, half, activePos) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  let html = getPitchSvg();
+  PITCH_POSITIONS.forEach(p => {
+    const isSelected = activePos === p.id;
+    html += `
+      <div class="pitch-node" data-pos="${p.id}" onclick="selectMatchPosition('${half}', '${p.id}')"
+        style="position: absolute; left: ${p.x}%; top: ${p.y}%; transform: translate(-50%, -50%); width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; cursor: pointer; transition: all 0.15s ease; z-index: 5;
+        ${isSelected ? 'background: #E30613; color: white; border: 2px solid white; box-shadow: 0 0 0 3px #E30613, 0 3px 6px rgba(0,0,0,0.4); transform: translate(-50%, -50%) scale(1.15);' : 'background: white; color: #1e293b; border: 2px solid #0f172a; box-shadow: 0 2px 4px rgba(0,0,0,0.3);'}">
+        ${p.label}
+      </div>`;
+  });
+  container.innerHTML = html;
+}
+
+function selectMatchPosition(half, posId) {
+  selectedMatchPos[half] = posId;
+  renderPitch(half === 'first' ? 'firstHalfPitchContainer' : 'secondHalfPitchContainer', half, posId);
+  const textEl = document.getElementById(half === 'first' ? 'firstHalfPosText' : 'secondHalfPosText');
+  const btnEl = document.getElementById(half === 'first' ? 'btnFirstHalfUnplayed' : 'btnSecondHalfUnplayed');
+  const halfLabel = half === 'first' ? '전반' : '후반';
+  if (textEl) {
+    textEl.innerText = `${halfLabel}: ${posId}`;
+  }
+  if (btnEl) {
+    if (posId === '미출전') {
+      btnEl.style.background = '#475569';
+      btnEl.style.color = 'white';
+      btnEl.style.borderColor = '#475569';
+    } else {
+      btnEl.style.background = 'white';
+      btnEl.style.color = 'var(--black)';
+      btnEl.style.borderColor = '#cbd5e1';
+    }
+  }
+}
+
+function updateMatchSuccessRate() {
+  const att = parseInt(document.getElementById('matchAttempts').value) || 0;
+  const suc = parseInt(document.getElementById('matchSuccesses').value) || 0;
+  const rate = att > 0 ? Math.round((suc / att) * 100) : 0;
+  const rateEl = document.getElementById('matchSuccessRate');
+  if (rateEl) rateEl.innerText = `${rate}%`;
+}
+
+async function renderMatchSidebar() {
+  const sb = document.getElementById('sidebarBody');
+  if (!sb) return;
+  
+  const isCoach = currentUser.role === 'coach';
+  sb.innerHTML = `
+    <h3 style="margin-top:0;">⚽ 경기 평가</h3>
+    <button class="btn btn-red" style="margin-bottom:12px;" onclick="resetMatchForm()"><i class="fa fa-plus-circle"></i> 새 경기 평가 작성</button>
+    <hr style="margin: 14px 0 10px; border:0; border-top: 1px dashed #cbd5e1;">
+    <h3 style="margin-top:0;">${isCoach && currentPlayerName ? currentPlayerName + ' ' : '내 '}경기 평가 목록</h3>
+    <div id="matchSidebarList" style="font-size:12px; color:#94a3b8;">불러오는 중...</div>`;
+  
+  loadMatchList();
+}
+
+async function showMatchEvaluations() {
+  await flushPendingSaves();
+  currentPlayerId = '';
+  currentPlayerName = '';
+  showMatchEvaluation();
+}
+
+async function showMatchEvaluation(matchId = null) {
+  await flushPendingSaves();
+  hidePanels();
+  const wrapper = document.getElementById('matchWrapper');
+  const card = document.getElementById('matchCard');
+  if (!wrapper || !card) return;
+  wrapper.style.display = 'block';
+
+  editingMatchId = matchId;
+  const isCoach = currentUser.role === 'coach';
+  const targetPlayerId = currentPlayerId || currentUser.id;
+  const targetPlayerName = currentPlayerName || currentUser.name;
+
+  const defaultPhoto = isCoach 
+    ? ((playersInfo[targetPlayerId]||{}).photo || '') 
+    : (currentUser.photo || '');
+  currentMatchPlayerPhoto = defaultPhoto;
+
+  card.innerHTML = `
+    <div style="background: white; border-radius: 8px;">
+      <!-- Title Header -->
+      <div style="border-bottom: 3px solid #E30613; padding-bottom: 12px; margin-bottom: 22px; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+        <div>
+          <h2 style="margin: 0; font-size: 20px; font-weight: 900; color: #0f172a; display:flex; align-items:center; gap:8px;">
+            <span style="color:#E30613;">⚽</span> 전/후반 포지션 및 개인 수행지표 실시간 자동 제출 시스템
+          </h2>
+          <div style="font-size: 12px; color: #64748b; margin-top: 4px;">경기 후 본인의 포지션과 IDP 목표 달성도를 스스로 기록하고 지도자 피드백을 받습니다.</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-outline" style="width:auto; padding:6px 14px; font-size:12px;" onclick="resetMatchForm()"><i class="fa fa-rotate-left"></i> 새로 작성</button>
+        </div>
+      </div>
+
+      <!-- 1. Player Profile & Match Info -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #E30613; font-weight: 900; font-size: 16px; margin: 0 0 12px; display:flex; align-items:center; gap:6px;">
+          <span>1. 선수 프로필 & 경기 정보</span>
+        </h3>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px;">
+          <div style="display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+            <!-- Player Photo -->
+            <div style="width: 105px; display: flex; flex-direction: column; align-items: center;">
+              <img id="matchPlayerPhoto" src="${getDriveImgUrl(defaultPhoto) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'110\' fill=\'%23cbd5e1\' viewBox=\'0 0 24 24\'><path d=\'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\'/></svg>'}" style="width: 100px; height: 110px; border-radius: 6px; object-fit: cover; background: #e2e8f0; border: 1px solid #cbd5e1; display: block;">
+              <input type="file" id="matchPhotoFile" accept="image/*" style="display:none;" onchange="handleMatchPlayerPhoto(event)">
+              <button class="btn btn-black" style="font-size: 11px; padding: 5px 8px; margin-top: 6px; width: 100%;" onclick="document.getElementById('matchPhotoFile').click()">
+                <i class="fa fa-camera"></i> 사진 등록
+              </button>
+            </div>
+            <!-- Player Info Fields -->
+            <div style="flex: 1; min-width: 250px;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                <div>
+                  <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 4px; display: block;">선수 이름</label>
+                  ${isCoach ? `
+                    <select id="matchPlayerSelect" onchange="onMatchPlayerSelectChange()" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: bold;">
+                      <option value="">선수 선택</option>
+                      ${Object.keys(playersInfo).map(pid => `<option value="${pid}" ${pid===targetPlayerId?'selected':''}>${playersInfo[pid].name}</option>`).join('')}
+                    </select>` : `
+                    <input type="text" id="matchPlayerName" value="${targetPlayerName}" readonly style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: bold; background:#f1f5f9;">`}
+                </div>
+                <div>
+                  <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 4px; display: block;">경기 일자</label>
+                  <input type="date" id="matchDate" value="${dateStr(new Date())}" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                </div>
+              </div>
+              <div style="margin-top: 12px;">
+                <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 4px; display: block;">상대 팀 / 경기 종류</label>
+                <input type="text" id="matchOpponent" placeholder="예: 연습경기 / OO중학교" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+              </div>
+            </div>
+          </div>
+
+          <!-- Pitch Selection Area -->
+          <div style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+            <div style="font-weight: 800; font-size: 13.5px; color: #1e293b; margin-bottom: 12px; display:flex; align-items:center; gap:6px;">
+              <span>경기 포지션 선택 (전반/후반 각각 선택)</span>
+            </div>
+            <div style="display: flex; gap: 20px; justify-content: center; flex-wrap: wrap;">
+              <!-- First Half Pitch -->
+              <div style="flex: 1; min-width: 280px; max-width: 350px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="font-weight: 800; font-size: 14px; text-align: center; margin-bottom: 10px; color: #0f172a;">
+                  ⏱️ 전반전 포지션
+                </div>
+                <div id="firstHalfPitchContainer" style="position: relative; width: 100%; height: 350px; background: #237a34; border: 2px solid white; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 15px rgba(0,0,0,0.35); user-select:none;"></div>
+                <div style="text-align: center; margin-top: 10px;">
+                  <button id="btnFirstHalfUnplayed" class="btn btn-outline" style="width: auto; padding: 5px 14px; font-size: 12px; margin: 0 auto; display: inline-block;" onclick="selectMatchPosition('first', '미출전')">전반 미출전</button>
+                  <div id="firstHalfPosText" style="font-weight: 900; font-size: 15px; color: #E30613; margin-top: 6px;">전반: ${selectedMatchPos.first || '선택 안됨'}</div>
+                </div>
+              </div>
+
+              <!-- Second Half Pitch -->
+              <div style="flex: 1; min-width: 280px; max-width: 350px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                <div style="font-weight: 800; font-size: 14px; text-align: center; margin-bottom: 10px; color: #0f172a;">
+                  ⏱️ 후반전 포지션
+                </div>
+                <div id="secondHalfPitchContainer" style="position: relative; width: 100%; height: 350px; background: #237a34; border: 2px solid white; border-radius: 8px; overflow: hidden; box-shadow: inset 0 0 15px rgba(0,0,0,0.35); user-select:none;"></div>
+                <div style="text-align: center; margin-top: 10px;">
+                  <button id="btnSecondHalfUnplayed" class="btn btn-outline" style="width: auto; padding: 5px 14px; font-size: 12px; margin: 0 auto; display: inline-block;" onclick="selectMatchPosition('second', '미출전')">후반 미출전</button>
+                  <div id="secondHalfPosText" style="font-weight: 900; font-size: 15px; color: #E30613; margin-top: 6px;">후반: ${selectedMatchPos.second || '선택 안됨'}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Periodization Topic & IDP Individual Goal -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #E30613; font-weight: 900; font-size: 16px; margin: 0 0 12px;">
+          2. 주기화 주제 및 개별 목표 (IDP)
+        </h3>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px;">
+            <div>
+              <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 4px; display: block;">주차별 주기화 주제</label>
+              <select id="matchPeriodTopic" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                <option value="">-- 주기화 주제를 선택하세요 --</option>
+                <optgroup label="[패스 주기화]">
+                  <option value="패스: 1주차. 상황인지 후 패스 연결">1주차. 상황인지 후 패스 연결</option>
+                  <option value="패스: 2주차. 볼 소유를 위한 패스선택">2주차. 볼 소유를 위한 패스선택</option>
+                  <option value="패스: 3주차. 공격적인 패스선택,움직임 (전진)">3주차. 공격적인 패스선택,움직임 (전진)</option>
+                  <option value="패스: 4주차. 전진하기 위한 도전적인 패스,움직임(전진)">4주차. 전진하기 위한 도전적인 패스,움직임(전진)</option>
+                  <option value="패스: 5주차. 공수전환 시도 & 협력수비">5주차. 공수전환 시도 & 협력수비</option>
+                </optgroup>
+                <optgroup label="[터치 주기화]">
+                  <option value="터치: 1주차. 목적이 있는 터치 (공간,수비위치) 넓이">1주차. 목적이 있는 터치 (공간,수비위치) 넓이</option>
+                  <option value="터치: 2주차. 상황인지 볼소유를 위한 (소유) 터치">2주차. 상황인지 볼소유를 위한 (소유) 터치</option>
+                  <option value="터치: 3주차. 터치의 방향성 (공격적) (전진)">3주차. 터치의 방향성 (공격적) (전진)</option>
+                  <option value="터치: 4주차. 득점을 위한 터치 (터치)">4주차. 득점을 위한 터치 (터치)</option>
+                  <option value="터치: 5주차. 1대1,2대2 수비">5주차. 1대1,2대2 수비</option>
+                </optgroup>
+                <optgroup label="[드리블 주기화]">
+                  <option value="드리블: 1주차. 상황인지 + 속도변화 (소유)">1주차. 상황인지 + 속도변화 (소유)</option>
+                  <option value="드리블: 2주차. 볼소유를 위한 드리블 (소유)">2주차. 볼소유를 위한 드리블 (소유)</option>
+                  <option value="드리블: 3주차. 도전적인 드리블 + 슈팅 (전진)">3주차. 도전적인 드리블 + 슈팅 (전진)</option>
+                  <option value="드리블: 4주차. 전진적인 드리블 + 득점 (전진)">4주차. 전진적인 드리블 + 득점 (전진)</option>
+                  <option value="드리블: 5주차. 2대2, 3대2 수비">5주차. 2대2, 3대2 수비</option>
+                </optgroup>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: bold; color: #334155; margin-bottom: 4px; display: block;">오늘의 IDP 개인 목표</label>
+              <input type="text" id="matchIdpGoal" placeholder="예: 상황인지 후 앞발패스 시도" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Match Self-Evaluation (Metrics) -->
+      <div style="margin-bottom: 24px;">
+        <h3 style="color: #E30613; font-weight: 900; font-size: 16px; margin: 0 0 12px;">
+          3. 경기 자가평가 (지표 기록)
+        </h3>
+        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+          <table style="width: 100%; border-collapse: collapse; text-align: center;">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 1px solid #cbd5e1; font-size: 12.5px; color: #475569;">
+                <th style="padding: 12px 16px; text-align: left; width: 45%;">평가 항목 (행동 지표)</th>
+                <th style="padding: 12px 8px; width: 20%;">
+                  <span style="background: #fee2e2; color: #ef4444; padding: 3px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 900;">시도 횟수</span>
+                </th>
+                <th style="padding: 12px 8px; width: 20%;">
+                  <span style="background: #e0f2fe; color: #0284c7; padding: 3px 10px; border-radius: 12px; font-size: 11.5px; font-weight: 900;">성공 횟수</span>
+                </th>
+                <th style="padding: 12px 16px; width: 15%; font-weight: 900; color: #0f172a;">성공률</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding: 14px 16px; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                  <div style="font-weight: 900; font-size: 13.5px; color: #0f172a;">주기화 관련 핵심 패스 / 움직임</div>
+                  <div style="font-size: 11.5px; color: #64748b; margin-top: 2px;">(상황인지, 전진패스, 움직임 등)</div>
+                </td>
+                <td style="padding: 14px 8px; border-bottom: 1px solid #e2e8f0;">
+                  <input type="number" id="matchAttempts" min="0" value="0" style="width: 75px; text-align: center; font-size: 16px; font-weight: 900; padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; color: #ef4444;" oninput="updateMatchSuccessRate()">
+                </td>
+                <td style="padding: 14px 8px; border-bottom: 1px solid #e2e8f0;">
+                  <input type="number" id="matchSuccesses" min="0" value="0" style="width: 75px; text-align: center; font-size: 16px; font-weight: 900; padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; color: #0284c7;" oninput="updateMatchSuccessRate()">
+                </td>
+                <td style="padding: 14px 16px; border-bottom: 1px solid #e2e8f0;">
+                  <span id="matchSuccessRate" style="font-size: 18px; font-weight: 900; color: #E30613;">0%</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 4. Player Self-Feedback -->
+      <div style="margin-bottom: 22px;">
+        <h3 style="color: #E30613; font-weight: 900; font-size: 16px; margin: 0 0 10px;">
+          4. 선수 자가피드백
+        </h3>
+        <textarea id="matchPlayerFeedback" rows="4" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; font-size: 13px; font-family: inherit; line-height: 1.6;" placeholder="오늘 경기에서 잘된 점과 아쉬운 점을 솔직하게 기록하세요."></textarea>
+      </div>
+
+      <!-- 5. Coach Feedback -->
+      <div id="matchCoachFeedbackSection" style="margin-bottom: 24px;">
+        <h3 style="color: #0f172a; font-weight: 900; font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 6px;">
+          <span>🗣️ 지도자 피드백</span>
+          <span style="font-size: 11px; font-weight: normal; color: #64748b;">(지도자 전용 입력란)</span>
+        </h3>
+        <textarea id="matchCoachFeedback" rows="3" ${isCoach?'':'disabled'} style="width: 100%; border: 1px solid ${isCoach?'#f1948a':'#e2e8f0'}; border-radius: 6px; padding: 12px; font-size: 13px; font-family: inherit; background: ${isCoach?'#fffcfb':'#f8fafc'}; line-height: 1.6;" placeholder="${isCoach?'선수 경기 평가에 대한 지도자 피드백 및 개선 방향 코멘트를 입력하세요.':'지도자 피드백이 등록되면 여기에 표시됩니다.'}"></textarea>
+      </div>
+
+      <!-- Submit and Reset Buttons -->
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+        <button class="btn btn-outline" style="width: auto; padding: 10px 18px;" onclick="resetMatchForm()"><i class="fa fa-rotate-left"></i> 새로 작성</button>
+        <button class="btn btn-red" style="width: auto; padding: 10px 24px; font-size: 14px;" onclick="submitMatchEvaluation()"><i class="fa fa-save"></i> 경기 평가 저장 및 제출</button>
+      </div>
+
+      <!-- Past Match History Area -->
+      <hr style="margin: 36px 0 20px; border: 0; border-top: 2px dashed #cbd5e1;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 style="font-size: 17px; font-weight: 900; color: #0f172a; margin: 0; display:flex; align-items:center; gap:8px;">
+          <i class="fa fa-list-check" style="color: #E30613;"></i> 경기 평가 기록 목록
+        </h3>
+        <span id="matchListCount" style="font-size: 12px; color: #64748b; font-weight: bold;"></span>
+      </div>
+      <div id="matchListArea">
+        <div style="text-align:center; color:#94a3b8; padding:20px;">목록을 불러오는 중...</div>
+      </div>
+    </div>
+  `;
+
+  renderPitch('firstHalfPitchContainer', 'first', selectedMatchPos.first);
+  renderPitch('secondHalfPitchContainer', 'second', selectedMatchPos.second);
+
+  if (matchId) {
+    loadMatchIntoForm(matchId);
+  }
+
+  loadMatchList();
+}
+
+function onMatchPlayerSelectChange() {
+  const sel = document.getElementById('matchPlayerSelect');
+  if (!sel) return;
+  const pid = sel.value;
+  currentPlayerId = pid;
+  currentPlayerName = sel.options[sel.selectedIndex].text;
+  const photo = (playersInfo[pid]||{}).photo || '';
+  currentMatchPlayerPhoto = photo;
+  const photoImg = document.getElementById('matchPlayerPhoto');
+  if (photoImg) {
+    photoImg.src = getDriveImgUrl(photo) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'110\' fill=\'%23cbd5e1\' viewBox=\'0 0 24 24\'><path d=\'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\'/></svg>';
+  }
+  loadMatchList();
+}
+
+async function handleMatchPlayerPhoto(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  loading(true, '프로필 사진을 최적화 및 저장 중...');
+  try {
+    const dataUrl = await compressImage(file, 400, 400, 0.85);
+    const res = await api({ action: 'uploadFile', fileData: dataUrl, fileName: `profile_${Date.now()}.jpg`, fileType: 'image/jpeg' }, true);
+    if (res.ok) {
+      currentMatchPlayerPhoto = res.fileUrl;
+      const targetUserId = currentUser.role === 'coach' ? (currentPlayerId || currentUser.id) : currentUser.id;
+      await api({ action: 'updateUserPhoto', userId: targetUserId, photo: res.fileUrl });
+      if (playersInfo[targetUserId]) playersInfo[targetUserId].photo = res.fileUrl;
+      if (targetUserId === currentUser.id) {
+        currentUser.photo = res.fileUrl;
+        localStorage.setItem('tj_user', JSON.stringify(currentUser));
+        const av = document.getElementById('userAvatar');
+        if (av) { av.src = getDriveImgUrl(res.fileUrl); av.style.display = 'inline-block'; }
+      }
+      const pImg = document.getElementById('matchPlayerPhoto');
+      if (pImg) pImg.src = getDriveImgUrl(res.fileUrl);
+      loading(false);
+      uiToast('프로필 사진이 저장되었습니다.');
+    } else {
+      loading(false);
+      await uiAlert(res.error, '사진 업로드 실패');
+    }
+  } catch (err) {
+    loading(false);
+    await uiAlert('사진 처리 오류: ' + err.message, '오류');
+  }
+}
+
+function resetMatchForm() {
+  editingMatchId = null;
+  selectedMatchPos = { first: 'DM', second: 'LB' };
+  const dEl = document.getElementById('matchDate'); if (dEl) dEl.value = dateStr(new Date());
+  const opEl = document.getElementById('matchOpponent'); if (opEl) opEl.value = '';
+  const topEl = document.getElementById('matchPeriodTopic'); if (topEl) topEl.value = '';
+  const goalEl = document.getElementById('matchIdpGoal'); if (goalEl) goalEl.value = '';
+  const attEl = document.getElementById('matchAttempts'); if (attEl) attEl.value = '0';
+  const sucEl = document.getElementById('matchSuccesses'); if (sucEl) sucEl.value = '0';
+  const rateEl = document.getElementById('matchSuccessRate'); if (rateEl) rateEl.innerText = '0%';
+  const pfEl = document.getElementById('matchPlayerFeedback'); if (pfEl) pfEl.value = '';
+  const cfEl = document.getElementById('matchCoachFeedback'); if (cfEl) cfEl.value = '';
+
+  renderPitch('firstHalfPitchContainer', 'first', selectedMatchPos.first);
+  renderPitch('secondHalfPitchContainer', 'second', selectedMatchPos.second);
+  const t1 = document.getElementById('firstHalfPosText'); if (t1) t1.innerText = `전반: ${selectedMatchPos.first}`;
+  const t2 = document.getElementById('secondHalfPosText'); if (t2) t2.innerText = `후반: ${selectedMatchPos.second}`;
+  uiToast('새 경기 평가 작성 양식이 준비되었습니다.');
+}
+
+async function submitMatchEvaluation() {
+  const isCoach = currentUser.role === 'coach';
+  const playerId = isCoach ? (currentPlayerId || (document.getElementById('matchPlayerSelect') ? document.getElementById('matchPlayerSelect').value : '')) : currentUser.id;
+  const playerName = isCoach ? (playersInfo[playerId] ? playersInfo[playerId].name : currentPlayerName) : currentUser.name;
+
+  if (!playerId) {
+    await uiAlert('선수를 선택해주세요.', '입력 확인');
+    return;
+  }
+
+  const matchDate = document.getElementById('matchDate').value;
+  if (!matchDate) {
+    await uiAlert('경기 일자를 입력해주세요.', '입력 확인');
+    return;
+  }
+
+  const opponent = document.getElementById('matchOpponent').value.trim();
+  const periodTopic = document.getElementById('matchPeriodTopic').value;
+  const idpGoal = document.getElementById('matchIdpGoal').value.trim();
+  const attempts = parseInt(document.getElementById('matchAttempts').value) || 0;
+  const successes = parseInt(document.getElementById('matchSuccesses').value) || 0;
+  const successRate = document.getElementById('matchSuccessRate').innerText;
+  const playerFeedback = document.getElementById('matchPlayerFeedback').value.trim();
+  const coachFeedback = document.getElementById('matchCoachFeedback') ? document.getElementById('matchCoachFeedback').value.trim() : '';
+
+  const matchData = {
+    id: editingMatchId || null,
+    playerId,
+    playerName,
+    matchDate,
+    opponent,
+    firstHalfPosition: selectedMatchPos.first || '선택 안됨',
+    secondHalfPosition: selectedMatchPos.second || '선택 안됨',
+    periodTopic,
+    idpGoal,
+    attempts,
+    successes,
+    successRate,
+    playerFeedback,
+    coachFeedback,
+    playerPhoto: currentMatchPlayerPhoto || ''
+  };
+
+  loading(true, '경기 평가를 저장 및 제출하는 중입니다...');
+  try {
+    const res = await api({ action: 'saveMatchEvaluation', match: matchData });
+    loading(false);
+    if (res.ok) {
+      uiToast('경기 평가가 성공적으로 저장 및 제출되었습니다!');
+      editingMatchId = res.matchId || editingMatchId;
+      await loadMatchList();
+    } else {
+      await uiAlert(res.error || '저장에 실패했습니다.', '오류');
+    }
+  } catch (err) {
+    loading(false);
+    await uiAlert('통신 오류: ' + err.message, '오류');
+  }
+}
+
+async function loadMatchList() {
+  const isCoach = currentUser.role === 'coach';
+  const targetPlayerId = currentPlayerId || (isCoach ? '' : currentUser.id);
+
+  const res = await api({ action: 'listMatchEvaluations', playerId: targetPlayerId });
+  if (!res.ok) return;
+
+  matchEvaluationsCache = res.matches || [];
+  matchEvaluationsCache.sort((a,b) => new Date(b.matchDate) - new Date(a.matchDate));
+
+  const sbList = document.getElementById('matchSidebarList');
+  if (sbList) {
+    if (!matchEvaluationsCache.length) {
+      sbList.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 경기 평가가 없습니다.</div>';
+    } else {
+      sbList.innerHTML = matchEvaluationsCache.slice(0, 10).map(m => `
+        <div class="list-item" onclick="loadMatchIntoForm('${m.id}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:bold; font-size:12px; color:#0f172a;">${m.matchDate}</div>
+            <div style="font-size:11px; color:#64748b;">${m.opponent || '경기'} (${m.firstHalfPosition}/${m.secondHalfPosition})</div>
+          </div>
+          <span style="font-size:11px; font-weight:bold; color:#E30613;">${m.successRate || '0%'}</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  const countEl = document.getElementById('matchListCount');
+  if (countEl) countEl.innerText = `총 ${matchEvaluationsCache.length}건`;
+
+  const mainList = document.getElementById('matchListArea');
+  if (!mainList) return;
+
+  if (!matchEvaluationsCache.length) {
+    mainList.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:30px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">제출된 경기 평가 기록이 없습니다. 상단 양식을 작성하여 제출해보세요.</div>';
+    return;
+  }
+
+  mainList.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+        <thead>
+          <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1; color:#334155;">
+            <th style="padding:10px 12px; text-align:left;">일자 / 상대팀</th>
+            ${isCoach ? '<th style="padding:10px 8px; text-align:center;">선수명</th>' : ''}
+            <th style="padding:10px 8px; text-align:center;">포지션 (전/후)</th>
+            <th style="padding:10px 12px; text-align:left;">주제 및 IDP 목표</th>
+            <th style="padding:10px 8px; text-align:center;">시도 / 성공</th>
+            <th style="padding:10px 8px; text-align:center;">성공률</th>
+            <th style="padding:10px 10px; text-align:center;">피드백 현황</th>
+            <th style="padding:10px 10px; text-align:center;">관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${matchEvaluationsCache.map(m => `
+            <tr style="border-bottom:1px solid #e2e8f0; transition: background 0.15s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+              <td style="padding:12px; font-weight:bold; color:#0f172a;">
+                <div>${m.matchDate}</div>
+                <div style="font-size:11px; font-weight:normal; color:#64748b; margin-top:2px;">${m.opponent || '-'}</div>
+              </td>
+              ${isCoach ? `<td style="padding:12px 8px; text-align:center; font-weight:bold;">${m.playerName || '-'}</td>` : ''}
+              <td style="padding:12px 8px; text-align:center;">
+                <span style="background:#fef2f2; color:#ef4444; font-weight:bold; font-size:11px; padding:2px 6px; border-radius:4px;">${m.firstHalfPosition || '-'}</span>
+                <span style="color:#94a3b8;">/</span>
+                <span style="background:#f0f9ff; color:#0284c7; font-weight:bold; font-size:11px; padding:2px 6px; border-radius:4px;">${m.secondHalfPosition || '-'}</span>
+              </td>
+              <td style="padding:12px; max-width:240px;">
+                <div style="font-weight:bold; color:#1e293b; font-size:12px;">${m.periodTopic || '-'}</div>
+                <div style="font-size:11px; color:#64748b; margin-top:2px;">목표: ${m.idpGoal || '-'}</div>
+              </td>
+              <td style="padding:12px 8px; text-align:center;">
+                <span style="color:#ef4444; font-weight:bold;">${m.attempts || 0}</span> / <span style="color:#0284c7; font-weight:bold;">${m.successes || 0}</span>
+              </td>
+              <td style="padding:12px 8px; text-align:center; font-weight:900; color:#E30613; font-size:13.5px;">
+                ${m.successRate || '0%'}
+              </td>
+              <td style="padding:12px 10px; text-align:center; font-size:11px;">
+                ${m.coachFeedback ? '<span style="background:#dcfce7; color:#166534; font-weight:bold; padding:2px 6px; border-radius:4px;">피드백 완료</span>' : '<span style="background:#f1f5f9; color:#64748b; padding:2px 6px; border-radius:4px;">피드백 대기</span>'}
+              </td>
+              <td style="padding:12px 10px; text-align:center; white-space:nowrap;">
+                <button class="btn btn-outline" style="width:auto; padding:4px 8px; font-size:11px; margin-right:4px;" onclick="loadMatchIntoForm('${m.id}')"><i class="fa fa-pen"></i> 수정</button>
+                <button class="btn btn-outline" style="width:auto; padding:4px 8px; font-size:11px; color:#ef4444; border-color:#fca5a5;" onclick="deleteMatchEvaluation('${m.id}')"><i class="fa fa-trash"></i></button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function loadMatchIntoForm(matchId) {
+  const m = matchEvaluationsCache.find(x => x.id === matchId);
+  if (!m) return;
+
+  editingMatchId = m.id;
+  selectedMatchPos = {
+    first: m.firstHalfPosition || '선택 안됨',
+    second: m.secondHalfPosition || '선택 안됨'
+  };
+
+  if (document.getElementById('matchPlayerSelect')) {
+    document.getElementById('matchPlayerSelect').value = m.playerId || '';
+    currentPlayerId = m.playerId;
+    currentPlayerName = m.playerName;
+  }
+  if (document.getElementById('matchPlayerName')) {
+    document.getElementById('matchPlayerName').value = m.playerName || '';
+  }
+
+  const photo = m.playerPhoto || (playersInfo[m.playerId]||{}).photo || '';
+  currentMatchPlayerPhoto = photo;
+  const pImg = document.getElementById('matchPlayerPhoto');
+  if (pImg) pImg.src = getDriveImgUrl(photo) || 'data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'110\' fill=\'%23cbd5e1\' viewBox=\'0 0 24 24\'><path d=\'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z\'/></svg>';
+
+  const dEl = document.getElementById('matchDate'); if (dEl) dEl.value = m.matchDate || dateStr(new Date());
+  const opEl = document.getElementById('matchOpponent'); if (opEl) opEl.value = m.opponent || '';
+  const topEl = document.getElementById('matchPeriodTopic'); if (topEl) topEl.value = m.periodTopic || '';
+  const goalEl = document.getElementById('matchIdpGoal'); if (goalEl) goalEl.value = m.idpGoal || '';
+  const attEl = document.getElementById('matchAttempts'); if (attEl) attEl.value = m.attempts || 0;
+  const sucEl = document.getElementById('matchSuccesses'); if (sucEl) sucEl.value = m.successes || 0;
+  const rateEl = document.getElementById('matchSuccessRate'); if (rateEl) rateEl.innerText = m.successRate || '0%';
+  const pfEl = document.getElementById('matchPlayerFeedback'); if (pfEl) pfEl.value = m.playerFeedback || '';
+  const cfEl = document.getElementById('matchCoachFeedback'); if (cfEl) cfEl.value = m.coachFeedback || '';
+
+  renderPitch('firstHalfPitchContainer', 'first', selectedMatchPos.first);
+  renderPitch('secondHalfPitchContainer', 'second', selectedMatchPos.second);
+
+  const t1 = document.getElementById('firstHalfPosText'); if (t1) t1.innerText = `전반: ${selectedMatchPos.first}`;
+  const t2 = document.getElementById('secondHalfPosText'); if (t2) t2.innerText = `후반: ${selectedMatchPos.second}`;
+
+  const card = document.getElementById('matchCard');
+  if (card) card.scrollIntoView({ behavior: 'smooth' });
+
+  uiToast(`[${m.matchDate} ${m.opponent || '경기'}] 평가를 불러왔습니다.`);
+}
+
+async function deleteMatchEvaluation(matchId) {
+  if (!(await uiConfirm('이 경기 평가를 완전히 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.', '경기 평가 삭제'))) return;
+  loading(true, '경기 평가를 삭제하는 중입니다...');
+  try {
+    const res = await api({ action: 'deleteMatchEvaluation', matchId, requesterId: currentUser.id });
+    loading(false);
+    if (res.ok) {
+      uiToast('삭제되었습니다.');
+      if (editingMatchId === matchId) resetMatchForm();
+      await loadMatchList();
+    } else {
+      await uiAlert(res.error || '삭제 실패', '오류');
+    }
+  } catch (err) {
+    loading(false);
+    await uiAlert('오류: ' + err.message, '오류');
+  }
+}
+
 async function renderCoachSidebar() {
   try {
     const sb = document.getElementById('sidebar');
-    let baseHtml = `<button class="btn btn-black" onclick="showDashboard()"><i class="fa fa-table-columns"></i> 전체 대시보드</button><button class="btn btn-outline" onclick="showAnalytics()"><i class="fa fa-chart-pie"></i> 📊 심층 분석 대시보드</button><button class="btn btn-outline" onclick="showByType()"><i class="fa fa-layer-group"></i> 주기화별로 보기</button><hr style="margin: 18px 0; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">선수 선택 (조회/피드백)</h3><div id="playerPickArea">목록을 불러오는 중입니다...</div>`;
+    let baseHtml = `<button class="btn btn-black" onclick="showDashboard()"><i class="fa fa-table-columns"></i> 전체 대시보드</button><button class="btn btn-outline" onclick="showAnalytics()"><i class="fa fa-chart-pie"></i> 📊 심층 분석 대시보드</button><button class="btn btn-outline" onclick="showByType()"><i class="fa fa-layer-group"></i> 주기화별로 보기</button><button class="btn btn-outline" onclick="showMatchEvaluations()"><i class="fa fa-futbol"></i> ⚽ 경기 평가 관리</button><hr style="margin: 18px 0; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">선수 선택 (조회/피드백)</h3><div id="playerPickArea">목록을 불러오는 중입니다...</div>`;
     sb.innerHTML = baseHtml;
     const res = await api({ action:'listUsers' });
     if (!res.ok) { document.getElementById('playerPickArea').innerHTML = `<div style="color:var(--red); font-size:12px;">오류: ${res.error}</div>`; return; }
@@ -1501,7 +2150,7 @@ async function onPlayerChange(){
   currentEntry = null; showEmpty();
   const area = document.getElementById('playerDetailArea');
   if (!currentPlayerId) { area.innerHTML = ''; return; }
-  area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')" class="active">📋 주기화 목록</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
+  area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')" class="active">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
   switchMode('cycle'); 
 }
 
@@ -1564,7 +2213,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   const playerSel = document.getElementById('playerSelect'); if (playerSel) playerSel.value = playerId;
   const detailArea = document.getElementById('playerDetailArea');
   if (detailArea) {
-    detailArea.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" class="active" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"><h3>일지 유형</h3>${typeSelectHtml('typeSelect', 'onTypeChange()')}<hr style="margin: 18px 0 10px; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">${playerName} 주기화 목록</h3><div id="archiveList">목록 갱신 중...</div></div>`;
+    detailArea.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" class="active" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"><h3>일지 유형</h3>${typeSelectHtml('typeSelect', 'onTypeChange()')}<hr style="margin: 18px 0 10px; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">${playerName} 주기화 목록</h3><div id="archiveList">목록 갱신 중...</div></div>`;
     document.getElementById('typeSelect').value = type;
   }
   loadArchive();
@@ -1577,7 +2226,7 @@ async function openDashboardDiary(playerId, playerName, targetDate) {
   currentPlayerId = playerId; currentPlayerName = playerName; sidebarMode = 'diary';
   const playerSel = document.getElementById('playerSelect'); if (playerSel) playerSel.value = playerId;
   const detailArea = document.getElementById('playerDetailArea');
-  if (detailArea) detailArea.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeDiary" class="active" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
+  if (detailArea) detailArea.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" class="active" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
   initDiaryView();
   loading(true, '사진을 불러오는 중입니다...');
   api({ action:'listDiary', playerId: currentPlayerId }).then(res => {
@@ -1951,7 +2600,7 @@ async function exportExcel(){
     DAYS.forEach(day => { 
       cats.forEach((c, i) => { 
         const status = e.dayStatus && e.dayStatus[day] && e.dayStatus[day][i] ? e.dayStatus[day][i] : 'normal';
-        const statusStr = status === 'rest' ? '[휴식] ' : status === 'injury' ? '[부상] ' : '';
+        const statusStr = status === 'rest' ? '[휴식] ' : status === 'injury' ? '[부상] ' : status === 'gym' ? '[헬스장] ' : '';
         row[`[${day} 목적] ${c}`] = statusStr + (e.goals && e.goals[day] ? e.goals[day][i] || '' : ''); 
         row[`[${day} 시도] ${c}`] = e.dailyAttempts && e.dailyAttempts[day] ? e.dailyAttempts[day][i] || 0 : 0; 
         row[`[${day} 성공] ${c}`] = e.dailySuccesses && e.dailySuccesses[day] ? e.dailySuccesses[day][i] || 0 : 0; 
@@ -1970,6 +2619,22 @@ async function exportExcel(){
     '시스템 등록일시': d.createdAt || ''
   }));
 
+  const matchSheetData = (res.matchEvaluations || []).map(m => ({
+    '선수명': m.playerName || '',
+    '경기 일자': m.matchDate || '',
+    '상대팀 / 경기종류': m.opponent || '',
+    '전반전 포지션': m.firstHalfPosition || '',
+    '후반전 포지션': m.secondHalfPosition || '',
+    '주기화 주제': m.periodTopic || '',
+    'IDP 개인목표': m.idpGoal || '',
+    '시도 횟수': m.attempts || 0,
+    '성공 횟수': m.successes || 0,
+    '성공률': m.successRate || '0%',
+    '선수 자가피드백': m.playerFeedback || '',
+    '지도자 피드백': m.coachFeedback || '',
+    '제출/등록 일시': m.createdAt || ''
+  }));
+
   const users = res.users.map(u => ({
     '이름': u.name,
     '아이디(이메일)': u.id,
@@ -1981,6 +2646,7 @@ async function exportExcel(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "주기화 요약");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailed), "주기화 세부 데이터(전체)");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(matchSheetData), "경기 평가");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(diarySheetData), "포토 일지 통합");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(users), "사용자 목록");
 

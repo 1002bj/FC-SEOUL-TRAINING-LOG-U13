@@ -37,40 +37,12 @@ app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 // Static file serving
 app.use(express.static(__dirname));
 
-// Ensure test connection and seed admin/sample user if users collection is empty
+// Ensure test connection
 async function initDatabase() {
   try {
     const testRef = doc(db, 'test', 'connection');
     await setDoc(testRef, { connected: true, timestamp: new Date().toISOString() }, { merge: true });
     console.log('[Firebase] Connected successfully to Firestore database:', firebaseConfig.firestoreDatabaseId);
-
-    // Check users
-    const usersSnap = await getDocs(collection(db, 'users'));
-    if (usersSnap.empty) {
-      console.log('[Firebase] Seeding initial admin coach and demo player accounts...');
-      await setDoc(doc(db, 'users', 'coach1'), {
-        id: 'coach1',
-        pw: '1234',
-        name: 'FC서울 지도자',
-        role: 'coach',
-        photo: '',
-        granted: true,
-        isAdmin: true,
-        createdAt: new Date().toISOString()
-      });
-
-      await setDoc(doc(db, 'users', 'player1'), {
-        id: 'player1',
-        pw: '1234',
-        name: '김서울',
-        role: 'player',
-        photo: '',
-        granted: true,
-        isAdmin: false,
-        createdAt: new Date().toISOString()
-      });
-      console.log('[Firebase] Seeding complete: coach1 / 1234, player1 / 1234');
-    }
   } catch (err) {
     console.warn('[Firebase] Database initialization notice:', err.message);
   }
@@ -233,6 +205,15 @@ app.post('/api', async (req, res) => {
         return res.json({ ok: true });
       }
 
+      // 7-1. 사용자 프로필 사진 수정
+      case 'updateUserPhoto': {
+        const { userId, photo } = payload;
+        if (!userId) return res.json({ ok: false, error: '사용자 ID가 필요합니다.' });
+        const userRef = doc(db, 'users', userId);
+        await updateDoc(userRef, { photo: photo || '' });
+        return res.json({ ok: true });
+      }
+
       // 8. 계정 삭제
       case 'deleteUser': {
         const { targetId, deleteEntries } = payload;
@@ -249,6 +230,12 @@ app.post('/api', async (req, res) => {
           const dSnap = await getDocs(dq);
           const dDeletions = dSnap.docs.map(d => deleteDoc(d.ref));
           await Promise.all(dDeletions);
+
+          // Delete match evaluations
+          const mq = query(collection(db, 'matchEvaluations'), where('playerId', '==', targetId));
+          const mSnap = await getDocs(mq);
+          const mDeletions = mSnap.docs.map(d => deleteDoc(d.ref));
+          await Promise.all(mDeletions);
         }
         return res.json({ ok: true });
       }
@@ -339,11 +326,48 @@ app.post('/api', async (req, res) => {
         return res.json({ ok: true });
       }
 
-      // 17. 전체 대시보드 데이터 조회
+      // 17. 경기 평가 목록 조회
+      case 'listMatchEvaluations': {
+        const { playerId } = payload;
+        let q;
+        if (playerId) {
+          q = query(collection(db, 'matchEvaluations'), where('playerId', '==', playerId));
+        } else {
+          q = query(collection(db, 'matchEvaluations'));
+        }
+        const snap = await getDocs(q);
+        const matches = [];
+        snap.forEach(d => matches.push(d.data()));
+        matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
+        return res.json({ ok: true, matches });
+      }
+
+      // 18. 경기 평가 저장
+      case 'saveMatchEvaluation': {
+        const match = payload.match;
+        if (!match) return res.json({ ok: false, error: '저장할 경기 평가 데이터가 없습니다.' });
+        if (!match.matchId) {
+          match.matchId = `match_${match.playerId}_${match.matchDate}_${Date.now()}`;
+        }
+        match.updatedAt = new Date().toISOString();
+        if (!match.createdAt) match.createdAt = new Date().toISOString();
+        await setDoc(doc(db, 'matchEvaluations', match.matchId), match, { merge: true });
+        return res.json({ ok: true, matchId: match.matchId });
+      }
+
+      // 19. 경기 평가 삭제
+      case 'deleteMatchEvaluation': {
+        const { matchId } = payload;
+        await deleteDoc(doc(db, 'matchEvaluations', matchId));
+        return res.json({ ok: true });
+      }
+
+      // 20. 전체 대시보드 데이터 조회
       case 'getAllData': {
-        const [usersSnap, entriesSnap] = await Promise.all([
+        const [usersSnap, entriesSnap, matchesSnap] = await Promise.all([
           getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'entries'))
+          getDocs(collection(db, 'entries')),
+          getDocs(collection(db, 'matchEvaluations'))
         ]);
         const users = [];
         usersSnap.forEach(d => {
@@ -359,10 +383,13 @@ app.post('/api', async (req, res) => {
         });
         const entries = [];
         entriesSnap.forEach(d => entries.push(d.data()));
-        return res.json({ ok: true, users, entries });
+        const matches = [];
+        matchesSnap.forEach(d => matches.push(d.data()));
+        matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
+        return res.json({ ok: true, users, entries, matches });
       }
 
-      // 18. 파일 / 사진 / 동영상 업로드
+      // 21. 파일 / 사진 / 동영상 업로드
       case 'uploadFile': {
         const { base64, filename, mimeType } = payload;
         if (!base64) return res.json({ ok: false, error: '파일 데이터가 없습니다.' });

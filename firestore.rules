@@ -25,6 +25,11 @@ service cloud.firestore {
       allow get, create, update, delete: if isValidId(fileId);
     }
 
+    match /matchEvaluations/{matchId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(matchId);
+    }
+
     match /test/{docId} {
       allow read, write: if true;
     }

@@ -46,6 +46,29 @@
         "createdAt": { "type": "string", "description": "Creation timestamp" }
       },
       "required": ["diaryId", "playerId", "date"]
+    },
+    "MatchEvaluation": {
+      "title": "MatchEvaluation",
+      "description": "Individual match evaluation and metrics log",
+      "type": "object",
+      "properties": {
+        "matchId": { "type": "string", "description": "Unique match evaluation identifier" },
+        "playerId": { "type": "string", "description": "ID of the player" },
+        "playerName": { "type": "string", "description": "Name of the player" },
+        "matchDate": { "type": "string", "description": "Match date (YYYY-MM-DD)" },
+        "opponent": { "type": "string", "description": "Opponent team or match type" },
+        "firstHalfPosition": { "type": "string", "description": "Position in the first half" },
+        "secondHalfPosition": { "type": "string", "description": "Position in the second half" },
+        "periodTopic": { "type": "string", "description": "Periodization topic for the match" },
+        "idpGoal": { "type": "string", "description": "Individual Development Plan goal" },
+        "attempts": { "type": "number", "description": "Attempt count" },
+        "successes": { "type": "number", "description": "Success count" },
+        "successRate": { "type": "string", "description": "Success percentage" },
+        "playerFeedback": { "type": "string", "description": "Player self feedback" },
+        "coachFeedback": { "type": "string", "description": "Coach feedback on match" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["matchId", "playerId", "matchDate"]
     }
   },
   "firestore": {
@@ -60,6 +83,10 @@
     "/diaries/{diaryId}": {
       "schema": { "$ref": "#/entities/Diary" },
       "description": "Collection of photo diaries"
+    },
+    "/matchEvaluations/{matchId}": {
+      "schema": { "$ref": "#/entities/MatchEvaluation" },
+      "description": "Collection of match evaluations"
     }
   }
 }
