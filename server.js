@@ -28,10 +28,39 @@ const firebaseConfig = JSON.parse(firebaseConfigRaw);
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || '(default)');
 
-// Ensure Nginx Lua auth bridge exempts /api routes to prevent 302 redirects to cookie_check.html and subsequent 405 Not Allowed errors
+// Ensure Nginx directly routes /api to bypass any auth bridge redirects and worker caching
 function setupNginxApiBypass() {
   try {
+    function patchNginxFile(filePath, isTemplate) {
+      if (!fs.existsSync(filePath)) return false;
+      let content = fs.readFileSync(filePath, 'utf-8');
+      if (!content.includes('location /api {')) {
+        const defaultPortVar = isTemplate ? '${DEFAULT_APP_PORT}' : '3000';
+        const hostHeaderVar = isTemplate ? '${PROXY_FORWARDED_HOST_HEADER}' : '$host';
+        const apiBlock = `
+        # Direct proxy for API requests bypassing auth bridge checks
+        location /api {
+            proxy_pass http://localhost:${defaultPortVar};
+            proxy_set_header Host localhost:${defaultPortVar};
+            proxy_set_header X-Forwarded-Host ${hostHeaderVar};
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+        }
+`;
+        content = content.replace('# Serve the app for all other paths.', apiBlock + '\n        # Serve the app for all other paths.');
+        fs.writeFileSync(filePath, content);
+        return true;
+      }
+      return false;
+    }
+
+    const confPatched = patchNginxFile('/etc/nginx/nginx.conf', false);
+    patchNginxFile('/etc/nginx/nginx.conf.template', true);
+
     const luaPath = '/etc/nginx/user_auth_verification.lua';
+    let luaPatched = false;
     if (fs.existsSync(luaPath)) {
       let luaContent = fs.readFileSync(luaPath, 'utf-8');
       if (!luaContent.includes('string.sub(ngx.var.uri, 1, 5) == "/api/"')) {
@@ -40,22 +69,14 @@ function setupNginxApiBypass() {
           'if ngx.var.host == "localhost" then\n  return\nend\n\nif string.sub(ngx.var.uri, 1, 5) == "/api/" or ngx.var.uri == "/api" then\n  return\nend'
         );
         fs.writeFileSync(luaPath, luaContent);
-        exec('nginx -s reload', (err) => {
-          if (!err) console.log('[Nginx] Configured /api bypass in auth verification.');
-        });
+        luaPatched = true;
       }
     }
-    const authConfPath = '/etc/nginx/nginx_auth.conf.include';
-    if (fs.existsSync(authConfPath)) {
-      let authConf = fs.readFileSync(authConfPath, 'utf-8');
-      if (!authConf.includes('error_page 405 =200')) {
-        authConf = authConf.replace(
-          'location = /__cookie_check.html {',
-          'location = /__cookie_check.html {\n    error_page 405 =200 $uri;'
-        );
-        fs.writeFileSync(authConfPath, authConf);
-        exec('nginx -s reload', () => {});
-      }
+
+    if (confPatched || luaPatched) {
+      exec('nginx -s reload', (err) => {
+        if (!err) console.log('[Nginx] Configured direct /api route.');
+      });
     }
   } catch (e) {
     console.warn('[Nginx setup notice]', e.message);

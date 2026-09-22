@@ -656,9 +656,9 @@ async function api(payload, silent){
           loading(false);
           console.error('[API Error]', err);
         }
-        const userMsg = err.message === 'STATUS_405_RETRY' || err.message === 'STATUS_HTML_RETRY'
-          ? '서버 통신 연결 중입니다. 잠시 후 다시 시도해주세요.'
-          : String(err.message || err);
+        let userMsg = String(err.message || err);
+        if (err.message === 'STATUS_405_RETRY') userMsg = '서버 통신 오류 (405): 브라우저 캐시를 새로고침 후 다시 시도해주세요.';
+        if (err.message === 'STATUS_HTML_RETRY') userMsg = '서버 응답 오류 (예기치 않은 응답 수신): 새로고침 후 다시 시도해주세요.';
         return { ok: false, error: userMsg };
       }
     }
