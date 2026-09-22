@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile for players and coaches",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User ID / login username" },
+        "name": { "type": "string", "description": "User full name" },
+        "role": { "type": "string", "enum": ["player", "coach"], "description": "Role of user" },
+        "photo": { "type": "string", "description": "Profile photo URL or base64" },
+        "granted": { "type": "boolean", "description": "Approval status by administrator" },
+        "isAdmin": { "type": "boolean", "description": "Whether user is an administrator" },
+        "createdAt": { "type": "string", "description": "Account creation ISO timestamp" }
+      },
+      "required": ["id", "name", "role"]
+    },
+    "Entry": {
+      "title": "Entry",
+      "description": "Weekly periodized training log entry",
+      "type": "object",
+      "properties": {
+        "entryId": { "type": "string", "description": "Unique entry identifier" },
+        "playerId": { "type": "string", "description": "ID of the player" },
+        "playerName": { "type": "string", "description": "Name of the player" },
+        "type": { "type": "string", "enum": ["pass", "touch", "dribble"], "description": "Training periodization type" },
+        "weekStartDate": { "type": "string", "description": "Start date of the training week" },
+        "weekLabel": { "type": "string", "description": "Cycle label (e.g., 1바퀴)" },
+        "playerComment": { "type": "string", "description": "Self-reflection comments by player" },
+        "coachFeedback": { "type": "string", "description": "Feedback provided by coach" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["entryId", "playerId", "type", "weekStartDate"]
+    },
+    "Diary": {
+      "title": "Diary",
+      "description": "Daily photo training diary",
+      "type": "object",
+      "properties": {
+        "diaryId": { "type": "string", "description": "Unique diary identifier" },
+        "playerId": { "type": "string", "description": "ID of the player" },
+        "playerName": { "type": "string", "description": "Name of the player" },
+        "date": { "type": "string", "description": "Date of diary record (YYYY-MM-DD)" },
+        "photoUrl": { "type": "string", "description": "URL of the uploaded photo" },
+        "memo": { "type": "string", "description": "Daily notes or comments" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["diaryId", "playerId", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of all registered users"
+    },
+    "/entries/{entryId}": {
+      "schema": { "$ref": "#/entities/Entry" },
+      "description": "Collection of all periodic training entries"
+    },
+    "/diaries/{diaryId}": {
+      "schema": { "$ref": "#/entities/Diary" },
+      "description": "Collection of photo diaries"
+    }
+  }
+}

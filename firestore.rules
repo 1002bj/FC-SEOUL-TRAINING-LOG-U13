@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    match /users/{userId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(userId);
+    }
+
+    match /entries/{entryId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(entryId);
+    }
+
+    match /diaries/{diaryId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(diaryId);
+    }
+
+    match /files/{fileId} {
+      allow list: if true;
+      allow get, create, update, delete: if isValidId(fileId);
+    }
+
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
