@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 import { initializeApp } from 'firebase/app';
 import {
@@ -26,6 +27,41 @@ const firebaseConfig = JSON.parse(firebaseConfigRaw);
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || '(default)');
+
+// Ensure Nginx Lua auth bridge exempts /api routes to prevent 302 redirects to cookie_check.html and subsequent 405 Not Allowed errors
+function setupNginxApiBypass() {
+  try {
+    const luaPath = '/etc/nginx/user_auth_verification.lua';
+    if (fs.existsSync(luaPath)) {
+      let luaContent = fs.readFileSync(luaPath, 'utf-8');
+      if (!luaContent.includes('string.sub(ngx.var.uri, 1, 5) == "/api/"')) {
+        luaContent = luaContent.replace(
+          'if ngx.var.host == "localhost" then\n  return\nend',
+          'if ngx.var.host == "localhost" then\n  return\nend\n\nif string.sub(ngx.var.uri, 1, 5) == "/api/" or ngx.var.uri == "/api" then\n  return\nend'
+        );
+        fs.writeFileSync(luaPath, luaContent);
+        exec('nginx -s reload', (err) => {
+          if (!err) console.log('[Nginx] Configured /api bypass in auth verification.');
+        });
+      }
+    }
+    const authConfPath = '/etc/nginx/nginx_auth.conf.include';
+    if (fs.existsSync(authConfPath)) {
+      let authConf = fs.readFileSync(authConfPath, 'utf-8');
+      if (!authConf.includes('error_page 405 =200')) {
+        authConf = authConf.replace(
+          'location = /__cookie_check.html {',
+          'location = /__cookie_check.html {\n    error_page 405 =200 $uri;'
+        );
+        fs.writeFileSync(authConfPath, authConf);
+        exec('nginx -s reload', () => {});
+      }
+    }
+  } catch (e) {
+    console.warn('[Nginx setup notice]', e.message);
+  }
+}
+setupNginxApiBypass();
 
 const app = express();
 const PORT = 3000;

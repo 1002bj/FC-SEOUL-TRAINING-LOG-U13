@@ -612,6 +612,7 @@ async function api(payload, silent){
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
       
@@ -622,11 +623,14 @@ async function api(payload, silent){
         data = JSON.parse(text);
       } catch (jsonErr) {
         if (!res.ok) {
+          if (res.status === 405) {
+            throw new Error('STATUS_405_RETRY');
+          }
           throw new Error(`서버 응답 오류 (${res.status}): ` + (text.slice(0, 100) || ''));
         }
         const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
         if (isHtml) {
-          throw new Error('서버 접속 중입니다. 잠시 후 다시 시도해주세요.');
+          throw new Error('STATUS_HTML_RETRY');
         }
         throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
       }
@@ -639,19 +643,23 @@ async function api(payload, silent){
     } catch (err) {
       retries--;
       const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
+      const isRetryable = isNetworkErr || err.message === 'STATUS_405_RETRY' || err.message === 'STATUS_HTML_RETRY';
       
-      if (retries > 0 && isNetworkErr) {
+      if (retries > 0 && isRetryable) {
         await new Promise(r => setTimeout(r, delay));
         delay = Math.min(delay * 1.5, 3000);
         continue;
       }
       
-      if (retries === 0 || !isNetworkErr) {
+      if (retries === 0 || !isRetryable) {
         if (!silent) {
           loading(false);
           console.error('[API Error]', err);
         }
-        return { ok: false, error: String(err.message || err) };
+        const userMsg = err.message === 'STATUS_405_RETRY' || err.message === 'STATUS_HTML_RETRY'
+          ? '서버 통신 연결 중입니다. 잠시 후 다시 시도해주세요.'
+          : String(err.message || err);
+        return { ok: false, error: userMsg };
       }
     }
   }
