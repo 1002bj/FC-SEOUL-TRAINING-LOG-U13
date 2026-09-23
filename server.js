@@ -205,13 +205,14 @@ async function handleApiRequest(req, res) {
           photo: photo || '',
           granted,
           isAdmin,
+          isSynced: true,
           createdAt: new Date().toISOString()
         });
 
         return res.json({ ok: true });
       }
 
-      // 2. 로그인
+      // 2. 로그인 (임시 비밀번호 1234 완전 차단, 실제 가입/구글 시트 비밀번호만 허용)
       case 'login': {
         const { id, pw } = payload;
         if (!id || !pw) {
@@ -224,9 +225,14 @@ async function handleApiRequest(req, res) {
         }
         const user = userSnap.data();
 
-        let isValid = (user.pw === pw);
+        let isValid = false;
 
-        // 구글 스프레드시트에 저장된 원래 비밀번호와의 연동 검증
+        // 1. 이미 정상 동기화/가입/재설정된 실제 비밀번호와 일치하는지 확인
+        if (user.isSynced && user.pw && user.pw === pw) {
+          isValid = true;
+        }
+
+        // 2. DB에 동기화되지 않았거나 비밀번호가 일치하지 않는 경우, 구글 스프레드시트(GAS) 원본 비밀번호로 실시간 대조
         if (!isValid) {
           try {
             const controller = new AbortController();
@@ -241,9 +247,9 @@ async function handleApiRequest(req, res) {
             const gasData = await gasRes.json();
             if (gasData && gasData.ok) {
               isValid = true;
-              // 구글 시트에서 인증된 올바른 비밀번호를 Firestore에도 즉시 동기화 저장
-              await updateDoc(userRef, { pw: pw });
-              console.log(`[Google Sheet Sync] ${id} 계정 비밀번호가 구글 시트 데이터로 정상 동기화되었습니다.`);
+              // 구글 시트에서 인증된 올바른 실제 비밀번호를 Firestore에도 즉시 동기화 저장
+              await updateDoc(userRef, { pw: pw, isSynced: true });
+              console.log(`[Google Sheet Sync] ${id} 계정의 실제 비밀번호가 구글 시트 데이터로 정상 동기화되었습니다.`);
             }
           } catch (gasErr) {
             console.warn('[Google Sheet Login Verification Error]', gasErr.message);
@@ -306,7 +312,7 @@ async function handleApiRequest(req, res) {
         if (user.name !== name) {
           return res.json({ ok: false, error: '가입된 이름과 일치하지 않습니다.' });
         }
-        await updateDoc(userRef, { pw: newPw });
+        await updateDoc(userRef, { pw: newPw, isSynced: true });
 
         // 구글 스프레드시트에도 비밀번호 재설정 동기화 요청
         try {
@@ -587,12 +593,13 @@ async function handleApiRequest(req, res) {
                 const userRef = doc(db, 'users', String(u.id));
                 await setDoc(userRef, {
                   id: String(u.id),
-                  pw: u.pw || '1234',
+                  pw: u.pw || null,
                   name: u.name || String(u.id),
                   role: u.role || 'player',
                   photo: u.photo || '',
                   granted: u.granted !== false,
                   isAdmin: u.isAdmin === true,
+                  isSynced: !!u.pw,
                   importedAt: new Date().toISOString()
                 }, { merge: true });
                 userCount++;
