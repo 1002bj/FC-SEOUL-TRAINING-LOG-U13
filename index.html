@@ -603,11 +603,13 @@ function backendUrl(){
 async function api(payload, silent){
   if (!silent) loading(true);
   
-  let retries = 5;
-  let delay = 400;
+  let retries = 6;
+  let delay = 300;
   
+  // Use direct /api and fallback to cookie proxy if needed
   while (retries > 0) {
-    const url = '/api?_t=' + Date.now();
+    const endpoint = (retries === 1) ? '/__cookie_check.html' : '/api';
+    const url = `${endpoint}?_t=${Date.now()}`;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -626,14 +628,11 @@ async function api(payload, silent){
         data = JSON.parse(text);
       } catch (jsonErr) {
         if (!res.ok) {
-          if (res.status === 405) {
-            throw new Error('STATUS_405_RETRY');
-          }
           throw new Error(`서버 응답 오류 (${res.status}): ` + (text.slice(0, 100) || ''));
         }
         const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
         if (isHtml) {
-          throw new Error('STATUS_HTML_RETRY');
+          throw new Error('서버 응답 대기 중 (준비 중): ' + text.slice(0, 80));
         }
         throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
       }
@@ -646,11 +645,11 @@ async function api(payload, silent){
     } catch (err) {
       retries--;
       const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
-      const isRetryable = isNetworkErr || err.message === 'STATUS_405_RETRY' || err.message === 'STATUS_HTML_RETRY';
+      const isRetryable = isNetworkErr || err.message.includes('405') || err.message.includes('502') || err.message.includes('준비 중');
       
       if (retries > 0 && isRetryable) {
         await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 1.5, 2000);
+        delay = Math.min(delay * 1.5, 1500);
         continue;
       }
       
@@ -660,8 +659,6 @@ async function api(payload, silent){
           console.error('[API Error]', err);
         }
         let userMsg = String(err.message || err);
-        if (err.message === 'STATUS_405_RETRY') userMsg = '서버 통신 연결을 다시 수립하고 있습니다. 로그인 버튼을 한 번 더 눌러주세요.';
-        if (err.message === 'STATUS_HTML_RETRY') userMsg = '서버 응답 준비 중입니다. 로그인 버튼을 다시 한 번 눌러주세요.';
         return { ok: false, error: userMsg };
       }
     }

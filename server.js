@@ -28,6 +28,9 @@ const firebaseConfig = JSON.parse(firebaseConfigRaw);
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || '(default)');
 
+// Google Spreadsheet Web App URL for live synchronization
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
+
 // Ensure Nginx directly routes /api to bypass any auth bridge redirects and worker caching
 function setupNginxApiBypass() {
   try {
@@ -171,7 +174,7 @@ app.get('/api/files/:id', async (req, res) => {
 });
 
 // Main API Handler for all applet actions
-app.post('/api', async (req, res) => {
+async function handleApiRequest(req, res) {
   const payload = req.body || {};
   const action = payload.action;
 
@@ -220,9 +223,37 @@ app.post('/api', async (req, res) => {
           return res.json({ ok: false, error: '등록되지 않은 아이디입니다.' });
         }
         const user = userSnap.data();
-        if (user.pw !== pw) {
+
+        let isValid = (user.pw === pw);
+
+        // 구글 스프레드시트에 저장된 원래 비밀번호와의 연동 검증
+        if (!isValid) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const gasRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'login', id, pw }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            const gasData = await gasRes.json();
+            if (gasData && gasData.ok) {
+              isValid = true;
+              // 구글 시트에서 인증된 올바른 비밀번호를 Firestore에도 즉시 동기화 저장
+              await updateDoc(userRef, { pw: pw });
+              console.log(`[Google Sheet Sync] ${id} 계정 비밀번호가 구글 시트 데이터로 정상 동기화되었습니다.`);
+            }
+          } catch (gasErr) {
+            console.warn('[Google Sheet Login Verification Error]', gasErr.message);
+          }
+        }
+
+        if (!isValid) {
           return res.json({ ok: false, error: '비밀번호가 일치하지 않습니다.' });
         }
+
         return res.json({
           ok: true,
           user: {
@@ -243,6 +274,18 @@ app.post('/api', async (req, res) => {
         const q = query(collection(db, 'users'), where('name', '==', name));
         const qSnap = await getDocs(q);
         if (qSnap.empty) {
+          // Fallback to Google Sheet findId if not found in Firestore
+          try {
+            const gasRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'findId', name })
+            });
+            const gasData = await gasRes.json();
+            if (gasData && gasData.ok && Array.isArray(gasData.ids)) {
+              return res.json({ ok: true, ids: gasData.ids });
+            }
+          } catch (e) {}
           return res.json({ ok: false, error: '해당 이름으로 가입된 아이디를 찾을 수 없습니다.' });
         }
         const ids = [];
@@ -264,6 +307,16 @@ app.post('/api', async (req, res) => {
           return res.json({ ok: false, error: '가입된 이름과 일치하지 않습니다.' });
         }
         await updateDoc(userRef, { pw: newPw });
+
+        // 구글 스프레드시트에도 비밀번호 재설정 동기화 요청
+        try {
+          fetch(GAS_WEBAPP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'resetPw', id, name, newPw })
+          }).catch(() => {});
+        } catch (e) {}
+
         return res.json({ ok: true });
       }
 
@@ -605,6 +658,18 @@ app.post('/api', async (req, res) => {
     console.error(`API Error [${action}]:`, err);
     return res.status(500).json({ ok: false, error: err.message || '서버 처리 중 오류가 발생했습니다.' });
   }
+}
+
+// Bind API handler to /api as well as fallback POST paths
+app.post('/api', handleApiRequest);
+app.post('/', handleApiRequest);
+app.post('/__cookie_check.html', handleApiRequest);
+app.post('/warmup.html', handleApiRequest);
+
+// Safety redirect for cookie check GET requests
+app.get('/__cookie_check.html', (req, res) => {
+  const returnUrl = req.query.return_url || '/';
+  res.redirect(302, returnUrl);
 });
 
 // API fallback for undefined API routes to ensure JSON response instead of HTML
