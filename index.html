@@ -301,9 +301,9 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
     <div class="login-body">
       <div id="loginForm">
         <label>아이디</label>
-        <input type="text" id="loginId">
+        <input type="text" id="loginId" onkeydown="if(event.key==='Enter') doLogin()" oninput="document.getElementById('loginError').innerText=''">
         <label>비밀번호</label>
-        <input type="password" id="loginPw">
+        <input type="password" id="loginPw" onkeydown="if(event.key==='Enter') doLogin()" oninput="document.getElementById('loginError').innerText=''">
         <div style="display:flex; align-items:center; margin-bottom:14px;">
           <input type="checkbox" id="saveIdCheck" style="width:auto; height:auto; margin:0 6px 0 0;">
           <label for="saveIdCheck" style="margin:0; font-weight:normal; cursor:pointer;">아이디 저장</label>
@@ -597,21 +597,24 @@ function toggleForm(which){
   if(which==='find') document.getElementById('findIdResult').innerText = '';
 }
 function backendUrl(){
-  return '/api';
+  return '/api?_t=' + Date.now();
 }
 
 async function api(payload, silent){
-  const url = '/api';
   if (!silent) loading(true);
   
-  let retries = 4;
-  let delay = 500;
+  let retries = 5;
+  let delay = 400;
   
   while (retries > 0) {
+    const url = '/api?_t=' + Date.now();
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         credentials: 'include',
         body: JSON.stringify(payload)
       });
@@ -647,7 +650,7 @@ async function api(payload, silent){
       
       if (retries > 0 && isRetryable) {
         await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 1.5, 3000);
+        delay = Math.min(delay * 1.5, 2000);
         continue;
       }
       
@@ -657,8 +660,8 @@ async function api(payload, silent){
           console.error('[API Error]', err);
         }
         let userMsg = String(err.message || err);
-        if (err.message === 'STATUS_405_RETRY') userMsg = '서버 통신 오류 (405): 브라우저 캐시를 새로고침 후 다시 시도해주세요.';
-        if (err.message === 'STATUS_HTML_RETRY') userMsg = '서버 응답 오류 (예기치 않은 응답 수신): 새로고침 후 다시 시도해주세요.';
+        if (err.message === 'STATUS_405_RETRY') userMsg = '서버 통신 연결을 다시 수립하고 있습니다. 로그인 버튼을 한 번 더 눌러주세요.';
+        if (err.message === 'STATUS_HTML_RETRY') userMsg = '서버 응답 준비 중입니다. 로그인 버튼을 다시 한 번 눌러주세요.';
         return { ok: false, error: userMsg };
       }
     }
