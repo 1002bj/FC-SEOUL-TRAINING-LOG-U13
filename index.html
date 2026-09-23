@@ -604,8 +604,8 @@ async function api(payload, silent){
   const url = '/api';
   if (!silent) loading(true);
   
-  let retries = 3;
-  let delay = 1000;
+  let retries = 4;
+  let delay = 500;
   
   while (retries > 0) {
     try {

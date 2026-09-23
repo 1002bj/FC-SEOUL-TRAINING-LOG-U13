@@ -34,6 +34,11 @@ function setupNginxApiBypass() {
     function patchNginxFile(filePath, isTemplate) {
       if (!fs.existsSync(filePath)) return false;
       let content = fs.readFileSync(filePath, 'utf-8');
+      let changed = false;
+      if (!content.includes('worker_shutdown_timeout')) {
+        content = content.replace('worker_processes auto;', 'worker_processes auto;\nworker_shutdown_timeout 2s;');
+        changed = true;
+      }
       if (!content.includes('location /api {')) {
         const defaultPortVar = isTemplate ? '${DEFAULT_APP_PORT}' : '3000';
         const hostHeaderVar = isTemplate ? '${PROXY_FORWARDED_HOST_HEADER}' : '$host';
@@ -50,6 +55,9 @@ function setupNginxApiBypass() {
         }
 `;
         content = content.replace('# Serve the app for all other paths.', apiBlock + '\n        # Serve the app for all other paths.');
+        changed = true;
+      }
+      if (changed) {
         fs.writeFileSync(filePath, content);
         return true;
       }
@@ -76,7 +84,13 @@ function setupNginxApiBypass() {
     if (confPatched || luaPatched) {
       exec('nginx -s reload', (err) => {
         if (!err) console.log('[Nginx] Configured direct /api route.');
+        setTimeout(() => {
+          exec('pkill -9 -f "shutting down" || true');
+        }, 1500);
       });
+    } else {
+      // Clean up any zombie or lingering workers from previous reloads
+      exec('pkill -9 -f "shutting down" || true');
     }
   } catch (e) {
     console.warn('[Nginx setup notice]', e.message);
