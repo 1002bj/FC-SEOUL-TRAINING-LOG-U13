@@ -606,10 +606,9 @@ async function api(payload, silent){
   let retries = 6;
   let delay = 300;
   
-  // Use direct /api and fallback to cookie proxy if needed
+  // Use direct /api endpoint
   while (retries > 0) {
-    const endpoint = (retries === 1) ? '/__cookie_check.html' : '/api';
-    const url = `${endpoint}?_t=${Date.now()}`;
+    const url = `/api?_t=${Date.now()}`;
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -645,7 +644,7 @@ async function api(payload, silent){
     } catch (err) {
       retries--;
       const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
-      const isRetryable = isNetworkErr || err.message.includes('405') || err.message.includes('502') || err.message.includes('준비 중');
+      const isRetryable = isNetworkErr || err.message.includes('502') || err.message.includes('503') || err.message.includes('준비 중');
       
       if (retries > 0 && isRetryable) {
         await new Promise(r => setTimeout(r, delay));
