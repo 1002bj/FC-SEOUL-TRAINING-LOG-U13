@@ -422,6 +422,9 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId || '(default)');
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
 
+const withTimeout = (promise, ms = 4000, errorMsg = 'DB 응답 시간 초과') => 
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))]);
+
 window.runClientApi = async function(payload) {
   const action = payload.action;
   try {
@@ -430,15 +433,15 @@ window.runClientApi = async function(payload) {
         const { id, pw, name, role, photo } = payload;
         if (!id || !pw || !name) return { ok: false, error: '모든 항목을 입력해주세요.' };
         const userRef = doc(db, 'users', id);
-        const userSnap = await getDoc(userRef);
+        const userSnap = await withTimeout(getDoc(userRef), 4000);
         if (userSnap.exists()) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
-        const usersSnap = await getDocs(collection(db, 'users'));
+        const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
         const isFirst = usersSnap.empty;
         const isAdmin = isFirst && role === 'coach';
         const granted = isFirst || false;
-        await setDoc(userRef, {
+        await withTimeout(setDoc(userRef, {
           id, pw, name, role: role || 'player', photo: photo || '', granted, isAdmin, isSynced: true, createdAt: new Date().toISOString()
-        });
+        }), 4000);
         return { ok: true };
       }
 
@@ -446,7 +449,7 @@ window.runClientApi = async function(payload) {
         const { id, pw } = payload;
         if (!id || !pw) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
         const userRef = doc(db, 'users', id);
-        const userSnap = await getDoc(userRef);
+        const userSnap = await withTimeout(getDoc(userRef), 4000);
         if (!userSnap.exists()) return { ok: false, error: '등록되지 않은 아이디입니다.' };
         const user = userSnap.data();
 
@@ -460,18 +463,21 @@ window.runClientApi = async function(payload) {
         if (!isValid) {
           try {
             const controller = new AbortController();
-            const tid = setTimeout(() => controller.abort(), 6000);
-            const gasRes = await fetch(GAS_WEBAPP_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-              body: JSON.stringify({ action: 'login', id, pw }),
-              signal: controller.signal
-            });
-            clearTimeout(tid);
-            const gasData = await gasRes.json();
-            if (gasData && gasData.ok) {
-              isValid = true;
-              await updateDoc(userRef, { pw: pw, isSynced: true });
+            const tid = setTimeout(() => controller.abort(), 3500);
+            try {
+              const gasRes = await fetch(GAS_WEBAPP_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'login', id, pw }),
+                signal: controller.signal
+              });
+              const gasData = await gasRes.json();
+              if (gasData && gasData.ok) {
+                isValid = true;
+                withTimeout(updateDoc(userRef, { pw: pw, isSynced: true }), 3000).catch(()=>{});
+              }
+            } finally {
+              clearTimeout(tid);
             }
           } catch (e) {}
         }
@@ -930,128 +936,135 @@ function toggleForm(which){
   if(findForm) findForm.style.display = which==='find' ? 'block':'none';
   if(which==='find') document.getElementById('findIdResult').innerText = '';
 }
+const CLOUD_BACKEND_URL = "https://ais-dev-aywb3voaaouyxiutggw5pj-162743634034.asia-northeast1.run.app/api";
+let activeBackendTier = null; // 'local', 'cloud', or 'direct'
+
+function postProcessData(data) {
+  if (data && data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
+  if (data && data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+}
+
 function backendUrl(){
-  return '/api?_t=' + Date.now();
+  return activeBackendTier === 'cloud' ? `${CLOUD_BACKEND_URL}?_t=${Date.now()}` : `/api?_t=${Date.now()}`;
 }
 
 async function api(payload, silent){
   if (!silent) loading(true);
 
-  // 1. 이미 정적 호스팅(GitHub Pages 등)이거나 405 오류가 감지되어 클라이언트 Firestore 모드로 전환된 경우
-  if (window._useDirectFirestore) {
-    if (!window.runClientApi) {
-      await new Promise(r => {
-        if (window.runClientApi) return r();
-        window.addEventListener('firebase-ready', r, { once: true });
-        setTimeout(r, 1500);
-      });
-    }
-    if (window.runClientApi) {
-      try {
-        const res = await window.runClientApi(payload);
-        if (!silent) loading(false);
-        if (res && res.entries) res.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
-        if (res && res.diary) res.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
-        return res;
-      } catch (clientErr) {
-        if (!silent) loading(false);
-        return { ok: false, error: clientErr.message || '데이터베이스 통신 오류' };
-      }
-    }
-  }
-
-  // 2. GitHub Pages 등 정적 호스팅 도메인 감지 시 바로 Firestore 직접 모드 사용
-  if (window.location.hostname.includes('github.io') || window.location.protocol === 'file:') {
-    window._useDirectFirestore = true;
-    return api(payload, silent);
-  }
-
-  let retries = 3;
-  let delay = 300;
-
-  // 3. 백엔드(/api) 서버 호출 및 405 감지 시 무중단 자동 전환
-  while (retries > 0) {
-    const url = `/api?_t=${Date.now()}`;
+  // Helper for fast fetch with strict timeout
+  async function requestEndpoint(baseUrl, timeoutMs = 3500) {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        credentials: 'include',
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
-      // 배포된 정적 서버(Nginx, GitHub Pages 등)에서 POST 요청 차단 시 발생하는 405 응답 감지
-      if (res.status === 405) {
-        console.warn('[API] 정적 배포 호스팅(405 Not Allowed) 감지: 브라우저 직접 Firebase Firestore 모드로 자동 전환합니다.');
-        window._useDirectFirestore = true;
-        return api(payload, silent);
+      if (res.status === 405 || res.status === 404) {
+        throw new Error(`STATUS_${res.status}`);
       }
 
       const text = await res.text();
-      let data = null;
+      if (text.includes('405 Not Allowed') || text.includes('nginx')) {
+        throw new Error('STATUS_405');
+      }
 
+      let data;
       try {
         data = JSON.parse(text);
-      } catch (jsonErr) {
-        if (text.includes('405 Not Allowed') || text.includes('nginx')) {
-          console.warn('[API] Nginx 405 응답 감지: 브라우저 직접 Firestore 모드로 자동 전환합니다.');
-          window._useDirectFirestore = true;
-          return api(payload, silent);
-        }
-        if (!res.ok) {
-          // 기타 HTTP 오류 발생 시에도 Firestore 클라이언트가 있으면 대체 시도
-          if (window.runClientApi) {
-            window._useDirectFirestore = true;
-            return api(payload, silent);
-          }
-          throw new Error(`서버 응답 오류 (${res.status}): ` + (text.slice(0, 100) || ''));
-        }
-        const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
-        if (isHtml) {
-          if (window.runClientApi) {
-            window._useDirectFirestore = true;
-            return api(payload, silent);
-          }
-          throw new Error('서버 응답 대기 중 (준비 중): ' + text.slice(0, 80));
-        }
-        throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
+      } catch (e) {
+        throw new Error('INVALID_JSON');
       }
-
-      if (!silent) loading(false);
-      if (data && data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
-      if (data && data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
       return data;
-
-    } catch (err) {
-      retries--;
-      const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
-      const isRetryable = isNetworkErr || err.message.includes('502') || err.message.includes('503') || err.message.includes('준비 중');
-
-      if (retries > 0 && isRetryable) {
-        await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 1.5, 1500);
-        continue;
-      }
-
-      if (retries === 0 || !isRetryable) {
-        // 서버 연결 불가 시 즉시 Firestore 클라이언트 엔진으로 무중단 폴백
-        if (window.runClientApi) {
-          console.warn('[API] 백엔드 연결 불가, Firestore 직접 연동으로 전환:', err.message);
-          window._useDirectFirestore = true;
-          return api(payload, silent);
-        }
-        if (!silent) {
-          loading(false);
-          console.error('[API Error]', err);
-        }
-        let userMsg = String(err.message || err);
-        return { ok: false, error: userMsg };
-      }
+    } finally {
+      clearTimeout(tid);
     }
   }
+
+  // Tier 1: Check if already established on Cloud Backend
+  if (activeBackendTier === 'cloud') {
+    try {
+      const data = await requestEndpoint(CLOUD_BACKEND_URL, 6000);
+      if (!silent) loading(false);
+      postProcessData(data);
+      return data;
+    } catch (e) {
+      console.warn('[API] Cloud endpoint error, checking alternatives:', e.message);
+    }
+  }
+
+  // Tier 2: Check current origin /api if not on a known static host
+  const isStaticHost = window.location.hostname.includes('github.io') || 
+                       window.location.protocol === 'file:' || 
+                       window.location.hostname.endsWith('.pages.dev') ||
+                       window.location.hostname.endsWith('.netlify.app') ||
+                       window.location.hostname.endsWith('.web.app');
+
+  if (!isStaticHost && activeBackendTier !== 'direct') {
+    try {
+      const data = await requestEndpoint('/api', 2500);
+      activeBackendTier = 'local';
+      if (!silent) loading(false);
+      postProcessData(data);
+      return data;
+    } catch (err) {
+      console.warn('[API] Local /api bypassed:', err.message);
+    }
+  }
+
+  // Tier 3: Call Cloud Backend URL (always works with full CORS support)
+  if (activeBackendTier !== 'direct') {
+    try {
+      const data = await requestEndpoint(CLOUD_BACKEND_URL, 5000);
+      activeBackendTier = 'cloud';
+      if (!silent) loading(false);
+      postProcessData(data);
+      return data;
+    } catch (err) {
+      console.warn('[API] Cloud Backend URL unreachable:', err.message);
+    }
+  }
+
+  // Tier 4: Direct Client Firestore Mode (Fallback)
+  console.log('[API] Falling back to direct client Firestore...');
+  activeBackendTier = 'direct';
+
+  if (!window.runClientApi) {
+    await new Promise(r => {
+      if (window.runClientApi) return r();
+      window.addEventListener('firebase-ready', r, { once: true });
+      setTimeout(r, 2000);
+    });
+  }
+
+  if (window.runClientApi) {
+    try {
+      const res = await Promise.race([
+        window.runClientApi(payload),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('데이터베이스 응답 시간 초과 (4초)')), 4000))
+      ]);
+      if (!silent) loading(false);
+      postProcessData(res);
+      return res;
+    } catch (clientErr) {
+      if (!silent) loading(false);
+      return { ok: false, error: clientErr.message || '데이터베이스 처리 오류' };
+    }
+  }
+
+  if (!silent) loading(false);
+  return { 
+    ok: false, 
+    error: '서버 연결에 실패했습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.' 
+  };
+}
 }
 
 let progressBarTimer = null;
@@ -1175,22 +1188,50 @@ async function doResetPw() {
 async function doLogin(){
   const id = document.getElementById('loginId').value.trim();
   const pw = document.getElementById('loginPw').value;
-  const err = document.getElementById('loginError'); err.innerText = '';
-  if (!id || !pw) { err.innerText = '아이디와 비밀번호를 입력해주세요.'; return; }
+  const err = document.getElementById('loginError'); 
+  err.innerText = '';
+  if (!id || !pw) { 
+    err.innerText = '아이디와 비밀번호를 입력해주세요.'; 
+    return; 
+  }
 
-  // Show inline progress indicator
+  const btnLogin = document.querySelector('#loginForm button[onclick="doLogin()"]');
+  if (btnLogin) btnLogin.disabled = true;
+
+  // Progressive progress indicator
   err.style.color = '#0284c7';
   err.innerText = '로그인 확인 중...';
 
-  const res = await api({ action:'login', id, pw });
-  if (res && res.ok) { 
-    err.innerText = '';
-    if(document.getElementById('saveIdCheck').checked) localStorage.setItem('tj_saved_id', id);
-    else localStorage.removeItem('tj_saved_id');
-    setUser(res.user); 
-  } else {
+  const t1 = setTimeout(() => { if (err.innerText.includes('확인')) err.innerText = '서버 연결 확인 중...'; }, 2000);
+  const t2 = setTimeout(() => { if (err.innerText.includes('확인')) err.innerText = '인증 처리 중...'; }, 4000);
+
+  try {
+    const res = await Promise.race([
+      api({ action:'login', id, pw }),
+      new Promise(resolve => setTimeout(() => resolve({ ok: false, error: '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.' }), 8500))
+    ]);
+
+    clearTimeout(t1);
+    clearTimeout(t2);
+
+    if (res && res.ok) { 
+      err.innerText = '';
+      if(document.getElementById('saveIdCheck').checked) localStorage.setItem('tj_saved_id', id);
+      else localStorage.removeItem('tj_saved_id');
+      setUser(res.user); 
+    } else {
+      err.style.color = 'var(--red)';
+      err.innerText = res?.error || '로그인에 실패했습니다. 아이디와 비밀번호를 확인해주세요.';
+    }
+  } catch (ex) {
+    clearTimeout(t1);
+    clearTimeout(t2);
     err.style.color = 'var(--red)';
-    err.innerText = res?.error || '로그인에 실패했습니다. 아이디와 비밀번호를 확인해주세요.';
+    err.innerText = '로그인 중 오류가 발생했습니다: ' + (ex.message || '네트워크 오류');
+  } finally {
+    clearTimeout(t1);
+    clearTimeout(t2);
+    if (btnLogin) btnLogin.disabled = false;
   }
 }
 

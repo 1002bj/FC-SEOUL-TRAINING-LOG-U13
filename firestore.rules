@@ -6,28 +6,23 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow list: if true;
-      allow get, create, update, delete: if isValidId(userId);
+      allow read, write: if true;
     }
 
     match /entries/{entryId} {
-      allow list: if true;
-      allow get, create, update, delete: if isValidId(entryId);
+      allow read, write: if true;
     }
 
     match /diaries/{diaryId} {
-      allow list: if true;
-      allow get, create, update, delete: if isValidId(diaryId);
+      allow read, write: if true;
     }
 
     match /files/{fileId} {
-      allow list: if true;
-      allow get, create, update, delete: if isValidId(fileId);
+      allow read, write: if true;
     }
 
     match /matchEvaluations/{matchId} {
-      allow list: if true;
-      allow get, create, update, delete: if isValidId(matchId);
+      allow read, write: if true;
     }
 
     match /test/{docId} {
