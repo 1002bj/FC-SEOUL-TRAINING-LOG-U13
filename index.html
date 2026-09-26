@@ -403,7 +403,341 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   </div>
 </div>
 
-<div id="pdfReportContainer"></div>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { 
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, 
+  collection, getDocs, query, where 
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  projectId: "gen-lang-client-0262713454",
+  appId: "1:739328122623:web:202f078b9dfd2a864836ca",
+  apiKey: "AIzaSyBP63AmbtUJpGOH_vqc0ZswqxNnrjcn0-g",
+  authDomain: "gen-lang-client-0262713454.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-fcseoultrainingl-3ed659c0-df40-4341-a255-894c5d84c7e1"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId || '(default)');
+const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
+
+window.runClientApi = async function(payload) {
+  const action = payload.action;
+  try {
+    switch (action) {
+      case 'register': {
+        const { id, pw, name, role, photo } = payload;
+        if (!id || !pw || !name) return { ok: false, error: '모든 항목을 입력해주세요.' };
+        const userRef = doc(db, 'users', id);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const isFirst = usersSnap.empty;
+        const isAdmin = isFirst && role === 'coach';
+        const granted = isFirst || false;
+        await setDoc(userRef, {
+          id, pw, name, role: role || 'player', photo: photo || '', granted, isAdmin, isSynced: true, createdAt: new Date().toISOString()
+        });
+        return { ok: true };
+      }
+
+      case 'login': {
+        const { id, pw } = payload;
+        if (!id || !pw) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
+        const userRef = doc(db, 'users', id);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return { ok: false, error: '등록되지 않은 아이디입니다.' };
+        const user = userSnap.data();
+
+        let isValid = false;
+        // 1. 이미 정상 동기화/가입/재설정된 실제 비밀번호와 일치하는지 확인 (임시 1234 차단)
+        if (user.isSynced && user.pw && user.pw === pw) {
+          isValid = true;
+        }
+
+        // 2. 일치하지 않을 경우 구글 스프레드시트(GAS) 원본 비밀번호 실시간 대조
+        if (!isValid) {
+          try {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 6000);
+            const gasRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'login', id, pw }),
+              signal: controller.signal
+            });
+            clearTimeout(tid);
+            const gasData = await gasRes.json();
+            if (gasData && gasData.ok) {
+              isValid = true;
+              await updateDoc(userRef, { pw: pw, isSynced: true });
+            }
+          } catch (e) {}
+        }
+
+        if (!isValid) return { ok: false, error: '비밀번호가 일치하지 않습니다.' };
+
+        return {
+          ok: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            role: user.role,
+            photo: user.photo || '',
+            granted: user.granted || false,
+            isAdmin: user.isAdmin || false
+          }
+        };
+      }
+
+      case 'findId': {
+        const { name } = payload;
+        if (!name) return { ok: false, error: '이름을 입력해주세요.' };
+        const q = query(collection(db, 'users'), where('name', '==', name));
+        const qSnap = await getDocs(q);
+        if (qSnap.empty) {
+          try {
+            const gasRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'findId', name })
+            });
+            const gasData = await gasRes.json();
+            if (gasData && gasData.ok && Array.isArray(gasData.ids)) return { ok: true, ids: gasData.ids };
+          } catch(e){}
+          return { ok: false, error: '해당 이름으로 가입된 아이디를 찾을 수 없습니다.' };
+        }
+        const ids = [];
+        qSnap.forEach(d => ids.push(d.data().id));
+        return { ok: true, ids };
+      }
+
+      case 'resetPw': {
+        const { id, name, newPw } = payload;
+        if (!id || !name || !newPw) return { ok: false, error: '모든 항목을 입력해주세요.' };
+        const userRef = doc(db, 'users', id);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) return { ok: false, error: '아이디가 존재하지 않습니다.' };
+        const user = userSnap.data();
+        if (user.name !== name) return { ok: false, error: '가입된 이름과 일치하지 않습니다.' };
+        await updateDoc(userRef, { pw: newPw, isSynced: true });
+        try {
+          fetch(GAS_WEBAPP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'resetPw', id, name, newPw })
+          }).catch(()=>{});
+        } catch(e){}
+        return { ok: true };
+      }
+
+      case 'listUsers': {
+        const snap = await getDocs(collection(db, 'users'));
+        const users = [];
+        snap.forEach(d => {
+          const u = d.data();
+          users.push({
+            id: u.id,
+            name: u.name,
+            role: u.role,
+            photo: u.photo || '',
+            granted: u.granted || false,
+            isAdmin: u.isAdmin || false
+          });
+        });
+        return { ok: true, users };
+      }
+
+      case 'setRoleAndApprove': {
+        const { targetId, role } = payload;
+        await updateDoc(doc(db, 'users', targetId), { role, granted: true });
+        return { ok: true };
+      }
+
+      case 'setPermission': {
+        const { targetId, granted } = payload;
+        await updateDoc(doc(db, 'users', targetId), { granted });
+        return { ok: true };
+      }
+
+      case 'updateUserPhoto': {
+        const { userId, photo } = payload;
+        if (!userId) return { ok: false, error: '사용자 ID가 필요합니다.' };
+        await updateDoc(doc(db, 'users', userId), { photo: photo || '' });
+        return { ok: true };
+      }
+
+      case 'deleteUser': {
+        const { targetId, deleteEntries } = payload;
+        await deleteDoc(doc(db, 'users', targetId));
+        if (deleteEntries) {
+          const eq = query(collection(db, 'entries'), where('playerId', '==', targetId));
+          const eSnap = await getDocs(eq);
+          await Promise.all(eSnap.docs.map(d => deleteDoc(d.ref)));
+
+          const dq = query(collection(db, 'diaries'), where('playerId', '==', targetId));
+          const dSnap = await getDocs(dq);
+          await Promise.all(dSnap.docs.map(d => deleteDoc(d.ref)));
+
+          const mq = query(collection(db, 'matchEvaluations'), where('playerId', '==', targetId));
+          const mSnap = await getDocs(mq);
+          await Promise.all(mSnap.docs.map(d => deleteDoc(d.ref)));
+        }
+        return { ok: true };
+      }
+
+      case 'listEntries': {
+        const { playerId, type } = payload;
+        let q;
+        if (type) {
+          q = query(collection(db, 'entries'), where('playerId', '==', playerId), where('type', '==', type));
+        } else {
+          q = query(collection(db, 'entries'), where('playerId', '==', playerId));
+        }
+        const snap = await getDocs(q);
+        const entries = [];
+        snap.forEach(d => entries.push(d.data()));
+        return { ok: true, entries };
+      }
+
+      case 'getEntry': {
+        const { entryId } = payload;
+        const ref = doc(db, 'entries', entryId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return { ok: false, error: '일지를 찾을 수 없습니다.' };
+        return { ok: true, entry: snap.data() };
+      }
+
+      case 'saveEntry': {
+        const entry = payload.entry;
+        if (!entry) return { ok: false, error: '저장할 일지 데이터가 없습니다.' };
+        if (!entry.entryId) {
+          entry.entryId = `entry_${entry.playerId}_${entry.type}_${entry.weekStartDate}_${Date.now()}`;
+        }
+        entry.updatedAt = new Date().toISOString();
+        await setDoc(doc(db, 'entries', entry.entryId), entry);
+        return { ok: true, entryId: entry.entryId };
+      }
+
+      case 'deleteEntry': {
+        const { entryId } = payload;
+        await deleteDoc(doc(db, 'entries', entryId));
+        return { ok: true };
+      }
+
+      case 'listDiary': {
+        const { playerId } = payload;
+        const q = query(collection(db, 'diaries'), where('playerId', '==', playerId));
+        const snap = await getDocs(q);
+        const diary = [];
+        snap.forEach(d => diary.push(d.data()));
+        return { ok: true, diary };
+      }
+
+      case 'saveDiary': {
+        const { playerId, playerName, date, photoUrl, memo } = payload;
+        const diaryId = `diary_${playerId}_${date}_${Date.now()}`;
+        const diaryData = {
+          diaryId,
+          playerId,
+          playerName,
+          date,
+          photoUrl: photoUrl || '',
+          memo: memo || '',
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'diaries', diaryId), diaryData);
+        return { ok: true, diaryId };
+      }
+
+      case 'updateDiaryMemo': {
+        const { diaryId, memo } = payload;
+        await updateDoc(doc(db, 'diaries', diaryId), { memo });
+        return { ok: true };
+      }
+
+      case 'deleteDiary': {
+        const { diaryId } = payload;
+        await deleteDoc(doc(db, 'diaries', diaryId));
+        return { ok: true };
+      }
+
+      case 'listMatchEvaluations': {
+        const { playerId } = payload;
+        let q = playerId ? query(collection(db, 'matchEvaluations'), where('playerId', '==', playerId)) : collection(db, 'matchEvaluations');
+        const snap = await getDocs(q);
+        const matches = [];
+        snap.forEach(d => matches.push(d.data()));
+        matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
+        return { ok: true, matches };
+      }
+
+      case 'saveMatchEvaluation': {
+        const match = payload.match;
+        if (!match) return { ok: false, error: '저장할 경기 평가 데이터가 없습니다.' };
+        if (!match.matchId) {
+          match.matchId = `match_${match.playerId}_${match.matchDate}_${Date.now()}`;
+        }
+        match.updatedAt = new Date().toISOString();
+        if (!match.createdAt) match.createdAt = new Date().toISOString();
+        await setDoc(doc(db, 'matchEvaluations', match.matchId), match, { merge: true });
+        return { ok: true, matchId: match.matchId };
+      }
+
+      case 'deleteMatchEvaluation': {
+        const { matchId } = payload;
+        await deleteDoc(doc(db, 'matchEvaluations', matchId));
+        return { ok: true };
+      }
+
+      case 'getAllData': {
+        const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(collection(db, 'entries')),
+          getDocs(collection(db, 'matchEvaluations')),
+          getDocs(collection(db, 'diaries'))
+        ]);
+        const users = [];
+        usersSnap.forEach(d => {
+          const u = d.data();
+          users.push({
+            id: u.id, name: u.name, role: u.role, photo: u.photo || '', granted: u.granted || false, isAdmin: u.isAdmin || false
+          });
+        });
+        const entries = [];
+        entriesSnap.forEach(d => entries.push(d.data()));
+        const matches = [];
+        matchesSnap.forEach(d => matches.push(d.data()));
+        matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
+        const diaries = [];
+        diariesSnap.forEach(d => diaries.push(d.data()));
+        return { ok: true, users, entries, matches, diaries };
+      }
+
+      case 'uploadFile': {
+        const fileContent = payload.base64 || payload.fileData || payload.data;
+        const fname = payload.filename || payload.fileName || 'file';
+        const mtype = payload.mimeType || payload.fileType || 'application/octet-stream';
+        if (!fileContent) return { ok: false, error: '파일 데이터가 없습니다.' };
+        const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+        await setDoc(doc(db, 'files', fileId), {
+          fileId, filename: fname, mimeType: mtype, data: fileContent, createdAt: new Date().toISOString()
+        });
+        return { ok: true, viewUrl: fileContent, directUrl: fileContent, fileUrl: fileContent };
+      }
+
+      default:
+        return { ok: false, error: '지원되지 않는 요청입니다: ' + action };
+    }
+  } catch (err) {
+    console.error('[Direct Firestore Error]', err);
+    return { ok: false, error: err.message || '데이터베이스 처리 중 오류가 발생했습니다.' };
+  }
+};
+window._firebaseInitialized = true;
+window.dispatchEvent(new CustomEvent('firebase-ready'));
+</script>
 
 <script>
 Chart.register(ChartDataLabels);
@@ -602,11 +936,40 @@ function backendUrl(){
 
 async function api(payload, silent){
   if (!silent) loading(true);
-  
-  let retries = 6;
+
+  // 1. 이미 정적 호스팅(GitHub Pages 등)이거나 405 오류가 감지되어 클라이언트 Firestore 모드로 전환된 경우
+  if (window._useDirectFirestore) {
+    if (!window.runClientApi) {
+      await new Promise(r => {
+        if (window.runClientApi) return r();
+        window.addEventListener('firebase-ready', r, { once: true });
+        setTimeout(r, 1500);
+      });
+    }
+    if (window.runClientApi) {
+      try {
+        const res = await window.runClientApi(payload);
+        if (!silent) loading(false);
+        if (res && res.entries) res.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
+        if (res && res.diary) res.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+        return res;
+      } catch (clientErr) {
+        if (!silent) loading(false);
+        return { ok: false, error: clientErr.message || '데이터베이스 통신 오류' };
+      }
+    }
+  }
+
+  // 2. GitHub Pages 등 정적 호스팅 도메인 감지 시 바로 Firestore 직접 모드 사용
+  if (window.location.hostname.includes('github.io') || window.location.protocol === 'file:') {
+    window._useDirectFirestore = true;
+    return api(payload, silent);
+  }
+
+  let retries = 3;
   let delay = 300;
-  
-  // Use direct /api endpoint
+
+  // 3. 백엔드(/api) 서버 호출 및 405 감지 시 무중단 자동 전환
   while (retries > 0) {
     const url = `/api?_t=${Date.now()}`;
     try {
@@ -619,40 +982,67 @@ async function api(payload, silent){
         credentials: 'include',
         body: JSON.stringify(payload)
       });
-      
+
+      // 배포된 정적 서버(Nginx, GitHub Pages 등)에서 POST 요청 차단 시 발생하는 405 응답 감지
+      if (res.status === 405) {
+        console.warn('[API] 정적 배포 호스팅(405 Not Allowed) 감지: 브라우저 직접 Firebase Firestore 모드로 자동 전환합니다.');
+        window._useDirectFirestore = true;
+        return api(payload, silent);
+      }
+
       const text = await res.text();
       let data = null;
-      
+
       try {
         data = JSON.parse(text);
       } catch (jsonErr) {
+        if (text.includes('405 Not Allowed') || text.includes('nginx')) {
+          console.warn('[API] Nginx 405 응답 감지: 브라우저 직접 Firestore 모드로 자동 전환합니다.');
+          window._useDirectFirestore = true;
+          return api(payload, silent);
+        }
         if (!res.ok) {
+          // 기타 HTTP 오류 발생 시에도 Firestore 클라이언트가 있으면 대체 시도
+          if (window.runClientApi) {
+            window._useDirectFirestore = true;
+            return api(payload, silent);
+          }
           throw new Error(`서버 응답 오류 (${res.status}): ` + (text.slice(0, 100) || ''));
         }
         const isHtml = text.trim().startsWith('<') || text.includes('<html') || text.includes('<!DOCTYPE');
         if (isHtml) {
+          if (window.runClientApi) {
+            window._useDirectFirestore = true;
+            return api(payload, silent);
+          }
           throw new Error('서버 응답 대기 중 (준비 중): ' + text.slice(0, 80));
         }
         throw new Error('응답 형식 오류: ' + (text.slice(0, 100) || '서버 응답 없음'));
       }
-      
+
       if (!silent) loading(false);
       if (data && data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
       if (data && data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
       return data;
-      
+
     } catch (err) {
       retries--;
       const isNetworkErr = err.name === 'TypeError' || err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
       const isRetryable = isNetworkErr || err.message.includes('502') || err.message.includes('503') || err.message.includes('준비 중');
-      
+
       if (retries > 0 && isRetryable) {
         await new Promise(r => setTimeout(r, delay));
         delay = Math.min(delay * 1.5, 1500);
         continue;
       }
-      
+
       if (retries === 0 || !isRetryable) {
+        // 서버 연결 불가 시 즉시 Firestore 클라이언트 엔진으로 무중단 폴백
+        if (window.runClientApi) {
+          console.warn('[API] 백엔드 연결 불가, Firestore 직접 연동으로 전환:', err.message);
+          window._useDirectFirestore = true;
+          return api(payload, silent);
+        }
         if (!silent) {
           loading(false);
           console.error('[API Error]', err);
