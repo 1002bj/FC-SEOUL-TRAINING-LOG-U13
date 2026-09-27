@@ -9,6 +9,14 @@ export interface UpdateRecord {
 // 새로운 기능 구현 또는 버그 수정 시 배열 맨 위(0번째)에 추가합니다.
 export const UPDATES: UpdateRecord[] = [
   {
+    id: 'v1.3.0',
+    date: '2026-09-27',
+    changes: [
+      '오류 제보 플로팅 버튼 크기 20% 축소 최적화',
+      '마우스 호버 시 부드러운 알약형 확장 및 "오류 제보" 텍스트 노출 인터랙션 적용'
+    ]
+  },
+  {
     id: 'v1.2.0',
     date: '2026-09-27',
     changes: [

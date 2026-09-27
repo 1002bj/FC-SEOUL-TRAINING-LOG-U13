@@ -288,6 +288,74 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   .analytics-controls { flex-direction: column; align-items: stretch !important; }
   .analytics-controls select { width: 100%; margin-bottom: 8px; }
 }
+
+/* 🐞 Floating Bug Report Button - Animated Expand & Size Reduced by 20% */
+#floatingBugBtn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  height: 42px;
+  min-width: 42px;
+  width: 42px;
+  padding: 0 11px;
+  border-radius: 9999px;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+  cursor: pointer;
+  z-index: 9998;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
+              background-color 0.2s ease, 
+              transform 0.15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#floatingBugBtn:hover {
+  width: 108px;
+  padding: 0 14px;
+  background: #ea580c;
+  box-shadow: 0 6px 20px rgba(234, 88, 12, 0.55);
+}
+#floatingBugBtn:active {
+  transform: scale(0.96);
+}
+#floatingBugBtn .bug-icon {
+  font-size: 19px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.25s ease;
+}
+#floatingBugBtn:hover .bug-icon {
+  transform: rotate(-10deg) scale(1.05);
+}
+#floatingBugBtn .bug-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-left: 8px;
+  opacity: 0;
+  transform: translateX(10px);
+  pointer-events: none;
+  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, 
+              transform 0.22s cubic-bezier(0.4, 0, 0.2, 1) 0.05s;
+  letter-spacing: -0.3px;
+}
+#floatingBugBtn:hover .bug-text {
+  opacity: 1;
+  transform: translateX(0);
+}
 </style>
 </head>
 <body>
@@ -421,9 +489,10 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   </div>
 </div>
 
-<!-- 🐞 Floating Action Button for Bug Report (Image 1) -->
-<button id="floatingBugBtn" onclick="openBugReportModal()" title="오류 및 불편사항 제보" style="display:none; position:fixed; bottom:24px; right:24px; width:54px; height:54px; border-radius:50%; background:#f59e0b; color:white; border:none; box-shadow:0 6px 16px rgba(245,158,11,0.45); cursor:pointer; z-index:9998; align-items:center; justify-content:center; transition:transform 0.2s, background-color 0.2s;">
-  <i class="fa fa-bug" style="font-size:24px;"></i>
+<!-- 🐞 Floating Action Button for Bug Report (Animated Expand on Hover) -->
+<button id="floatingBugBtn" onclick="openBugReportModal()" title="오류 및 불편사항 제보" style="display:none;">
+  <span class="bug-icon"><i class="fa fa-bug"></i></span>
+  <span class="bug-text">오류 제보</span>
 </button>
 
 <!-- 🐞 Bug Report Modal (Image 2) -->
@@ -3799,6 +3868,14 @@ async function deleteBugReportAction(reportId) {
    - 배너 버전(id) 변경 시 기존 7일 안보기와 무관하게 새 공지 즉시 노출
    ========================================================================== */
 const UPDATES = [
+  {
+    id: 'v1.3.0',
+    date: '2026-09-27',
+    changes: [
+      '오류 제보 플로팅 버튼 크기 20% 축소 최적화',
+      '마우스 호버 시 부드러운 알약형 확장 및 "오류 제보" 텍스트 노출 인터랙션 적용'
+    ]
+  },
   {
     id: 'v1.2.0',
     date: '2026-09-27',
