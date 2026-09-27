@@ -354,6 +354,21 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 </div>
 
 <div id="appScreen">
+  <div id="updateBanner" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:10px 16px; font-size:13px; box-shadow:0 1px 2px rgba(0,0,0,0.03); flex-shrink:0;">
+    <div style="max-width:1200px; margin:0 auto; display:flex; flex-direction:row; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:260px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+          <span style="background:#0284c7; color:#ffffff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:9999px; letter-spacing:0.3px;">업데이트 안내</span>
+          <span id="updateBannerDate" style="font-weight:bold; color:#0c4a6e; font-size:12.5px;"></span>
+          <span id="updateBannerVersion" style="font-size:11px; color:#0284c7; font-weight:600; background:#e0f2fe; padding:1px 6px; border-radius:4px;"></span>
+        </div>
+        <ul id="updateBannerList" style="color:#0369a1; font-size:12px; margin:0; padding-left:18px; line-height:1.6;"></ul>
+      </div>
+      <button onclick="hideUpdateBanner()" style="font-size:11px; color:#0369a1; background:#ffffff; border:1px solid #bae6fd; padding:5px 12px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.03); white-space:nowrap; transition:all 0.15s ease; margin-top:2px;" onmouseover="this.style.background='#e0f2fe'; this.style.color='#0c4a6e';" onmouseout="this.style.background='#ffffff'; this.style.color='#0369a1';">
+        ✕ 7일간 안보기
+      </button>
+    </div>
+  </div>
   <div class="topbar">
     <div class="brand">FC SEOUL <span>TRAINING LOG U13</span></div>
     <div class="userinfo">
@@ -376,6 +391,9 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
       </div>
       <div id="matchWrapper" style="display:none;"><div id="matchCard" class="card" style="border-top:10px solid var(--red); max-width: 900px;"></div></div>
       <div id="diaryViewWrapper" style="display:none;"><div id="diaryViewCard"></div></div>
+      <div id="bugReportsWrapper" style="display:none;">
+        <div id="bugReportsCard" class="card" style="border-top:10px solid #ea580c; max-width:960px; margin:0 auto; background:white; padding:28px 32px; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,0.06);"></div>
+      </div>
       <div id="emptyMsg" class="empty">왼쪽에서 메뉴를 선택해보세요.</div>
     </div>
   </div>
@@ -400,6 +418,67 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
       <button class="btn btn-outline" id="uiModalBtnCancel" style="display:none; width:auto;">취소</button>
       <button class="btn btn-red" id="uiModalBtnOk" style="width:auto;">확인</button>
     </div>
+  </div>
+</div>
+
+<!-- 🐞 Floating Action Button for Bug Report (Image 1) -->
+<button id="floatingBugBtn" onclick="openBugReportModal()" title="오류 및 불편사항 제보" style="display:none; position:fixed; bottom:24px; right:24px; width:54px; height:54px; border-radius:50%; background:#f59e0b; color:white; border:none; box-shadow:0 6px 16px rgba(245,158,11,0.45); cursor:pointer; z-index:9998; align-items:center; justify-content:center; transition:transform 0.2s, background-color 0.2s;">
+  <i class="fa fa-bug" style="font-size:24px;"></i>
+</button>
+
+<!-- 🐞 Bug Report Modal (Image 2) -->
+<div id="bugReportModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:10000; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:white; border-radius:18px; width:92%; max-width:560px; box-shadow:0 20px 45px rgba(0,0,0,0.28); padding:24px 26px; position:relative; max-height:90vh; overflow-y:auto; box-sizing:border-box;">
+    
+    <!-- Modal Header -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; gap:10px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="width:42px; height:42px; border-radius:50%; background:#fef3c7; display:flex; align-items:center; justify-content:center; color:#d97706; font-size:20px; flex-shrink:0;">
+          <i class="fa fa-bug"></i>
+        </div>
+        <div>
+          <h3 style="margin:0; font-size:18px; font-weight:800; color:#0f172a;">오류 및 불편사항 제보</h3>
+          <div style="font-size:12.5px; color:#64748b; margin-top:2px;">문제가 발생했거나 안 되는 기능을 알려주세요.</div>
+        </div>
+      </div>
+
+      <!-- Mode Toggle Tabs -->
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div style="background:#f1f5f9; padding:3px; border-radius:8px; display:inline-flex; gap:2px;" id="bugModalTabGroup">
+          <button id="bugTabNew" onclick="switchBugModalTab('new')" style="border:none; border-radius:6px; padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer; background:white; color:#0f172a; box-shadow:0 1px 3px rgba(0,0,0,0.1);">새로 작성</button>
+          <button id="bugTabList" onclick="switchBugModalTab('list')" style="border:none; border-radius:6px; padding:6px 12px; font-size:12.5px; font-weight:600; cursor:pointer; background:transparent; color:#64748b;">내 제보 내역</button>
+        </div>
+        <button onclick="closeBugReportModal()" style="border:none; background:none; font-size:22px; color:#94a3b8; cursor:pointer; padding:2px 4px; line-height:1;">&times;</button>
+      </div>
+    </div>
+
+    <!-- Tab 1: 새로 작성 (Image 2) -->
+    <div id="bugTabContentNew">
+      <div style="margin-bottom:16px;">
+        <textarea id="bugReportContent" placeholder="예: 경기 평가 화면에서 삭제 버튼을 눌렀는데 '삭제 중 오류가 발생했습니다' 라고 떠요." style="width:100%; min-height:160px; padding:14px 16px; border:1.5px solid #cbd5e1; border-radius:12px; font-size:14px; line-height:1.6; resize:vertical; box-sizing:border-box; outline:none; font-family:inherit;"></textarea>
+      </div>
+      
+      <!-- Auto captured diagnostics hint -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; font-size:11.5px; color:#94a3b8;">
+        <span><i class="fa fa-info-circle"></i> 화면 해상도 및 최근 시스템 진단 로그가 함께 안전하게 접수됩니다.</span>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display:flex; justify-content:flex-end; gap:10px; align-items:center;">
+        <button onclick="closeBugReportModal()" class="btn btn-outline" style="width:auto; padding:9px 18px; font-size:13.5px; font-weight:700; border:none; color:#64748b;">취소</button>
+        <button id="btnSubmitBugReport" onclick="submitBugReportAction()" style="background:#ea580c; color:white; font-weight:800; font-size:14px; padding:10px 20px; border-radius:8px; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:8px; box-shadow:0 2px 6px rgba(234,88,12,0.35);">
+          <i class="fa fa-paper-plane"></i> 제보하기
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab 2: 내 제보 내역 / 관리자 전체 제보 내역 -->
+    <div id="bugTabContentList" style="display:none;">
+      <div id="bugModalListContainer" style="max-height:460px; overflow-y:auto; padding-right:4px;">
+        <div style="text-align:center; padding:30px; color:#94a3b8;">불러오는 중...</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -733,6 +812,80 @@ window.runClientApi = async function(payload) {
         return { ok: true, viewUrl: fileContent, directUrl: fileContent, fileUrl: fileContent };
       }
 
+      case 'submitBugReport': {
+        const { userId, userName, userRole, content, screen, userAgent, systemLogs } = payload;
+        if (!content || !content.trim()) return { ok: false, error: '제보 내용을 입력해주세요.' };
+        const reportId = 'report_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const now = new Date();
+        const reportData = {
+          id: reportId,
+          userId: userId || 'anonymous',
+          userName: userName || '익명',
+          userRole: userRole || 'player',
+          content: content.trim(),
+          screen: screen || '',
+          userAgent: userAgent || '',
+          systemLogs: Array.isArray(systemLogs) ? systemLogs.slice(-50) : [],
+          createdAt: now.toISOString(),
+          createdAtFormatted: now.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: true
+          }),
+          status: 'pending',
+          adminReply: '',
+          adminReplyDate: ''
+        };
+        await setDoc(doc(db, 'bugReports', reportId), reportData);
+        return { ok: true, report: reportData };
+      }
+
+      case 'listBugReports': {
+        const { requesterId, isAdmin } = payload;
+        const reportsSnap = await getDocs(collection(db, 'bugReports'));
+        const reports = [];
+        reportsSnap.forEach(d => {
+          const r = d.data();
+          if (isAdmin || r.userId === requesterId) {
+            reports.push(r);
+          }
+        });
+        reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return { ok: true, reports };
+      }
+
+      case 'replyBugReport': {
+        const { reportId, adminReply } = payload;
+        if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
+        const now = new Date();
+        const dateStr = now.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          hour12: true
+        });
+        await updateDoc(doc(db, 'bugReports', reportId), {
+          adminReply: adminReply || '',
+          adminReplyDate: adminReply ? dateStr : '',
+          status: adminReply ? 'replied' : 'pending'
+        });
+        return { ok: true, adminReply, adminReplyDate: dateStr };
+      }
+
+      case 'deleteBugReport': {
+        const { reportId } = payload;
+        if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
+        await deleteDoc(doc(db, 'bugReports', reportId));
+        return { ok: true };
+      }
+
       default:
         return { ok: false, error: '지원되지 않는 요청입니다: ' + action };
     }
@@ -746,6 +899,37 @@ window.dispatchEvent(new CustomEvent('firebase-ready'));
 </script>
 
 <script>
+// 🐞 System Logger for Bug Reports
+window._systemLogs = window._systemLogs || [];
+(function(){
+  const maxLogs = 50;
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  function addLog(type, args) {
+    try {
+      const now = new Date();
+      const time = now.toTimeString().split(' ')[0];
+      const msg = Array.from(args).map(a => {
+        if (a === null) return 'null';
+        if (a === undefined) return 'undefined';
+        if (typeof a === 'object') {
+          try { return JSON.stringify(a); } catch(e) { return String(a); }
+        }
+        return String(a);
+      }).join(' ');
+      window._systemLogs.push(`[${time}] [${type.toUpperCase()}] ${msg.slice(0, 300)}`);
+      if (window._systemLogs.length > maxLogs) window._systemLogs.shift();
+    } catch(e){}
+  }
+  console.log = function(...args) { addLog('log', args); originalLog.apply(console, args); };
+  console.warn = function(...args) { addLog('warn', args); originalWarn.apply(console, args); };
+  console.error = function(...args) { addLog('error', args); originalError.apply(console, args); };
+  window.addEventListener('error', function(e) {
+    addLog('uncaught', [e.message, (e.filename || '') + ':' + (e.lineno || '')]);
+  });
+})();
+
 Chart.register(ChartDataLabels);
 
 const DEFAULT_BACKEND_URL = "/api";
@@ -1271,6 +1455,9 @@ async function logout(){
   localStorage.removeItem('tj_user');
   document.getElementById('appScreen').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
+  const bugBtn = document.getElementById('floatingBugBtn');
+  if (bugBtn) bugBtn.style.display = 'none';
+  closeBugReportModal();
 }
 
 function enterApp(){
@@ -1280,6 +1467,10 @@ function enterApp(){
   if (currentUser.photo) { av.src = currentUser.photo; av.style.display = 'inline-block'; } else av.style.display = 'none';
   if (!currentUser.granted && !currentUser.isAdmin) { showPendingScreen(); return; }
   
+  // Show Floating Bug Report Button
+  const bugBtn = document.getElementById('floatingBugBtn');
+  if (bugBtn) bugBtn.style.display = 'flex';
+
   document.getElementById('userLabel').innerText = `${currentUser.name} (${currentUser.role==='player'?'선수':'지도자'}${currentUser.isAdmin?' · 관리자':''})`;
   const btnExport = document.getElementById('btnExportExcel');
   if (currentUser.role === 'player') { 
@@ -1291,6 +1482,9 @@ function enterApp(){
     renderCoachSidebar(); 
     showDashboard(); 
   }
+
+  // Initialize and display Update Banner if applicable
+  initUpdateBanner();
 }
 
 async function checkApprovalStatus() {
@@ -1323,7 +1517,7 @@ function showPendingScreen(){
 }
 
 function hidePanels(){
-  ['journalWrapper','dashboardWrapper','byTypeWrapper','analyticsWrapper','matchWrapper','diaryViewWrapper','emptyMsg'].forEach(id => {
+  ['journalWrapper','dashboardWrapper','byTypeWrapper','analyticsWrapper','matchWrapper','diaryViewWrapper','bugReportsWrapper','emptyMsg'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = 'none';
   });
@@ -2619,7 +2813,7 @@ async function deleteMatchEvaluation(matchId) {
 async function renderCoachSidebar() {
   try {
     const sb = document.getElementById('sidebar');
-    let baseHtml = `<button class="btn btn-black" onclick="showDashboard()"><i class="fa fa-table-columns"></i> 전체 대시보드</button><button class="btn btn-outline" onclick="showAnalytics()"><i class="fa fa-chart-pie"></i> 📊 심층 분석 대시보드</button><button class="btn btn-outline" onclick="showByType()"><i class="fa fa-layer-group"></i> 주기화별로 보기</button><button class="btn btn-outline" onclick="showMatchEvaluations()"><i class="fa fa-futbol"></i> ⚽ 경기 평가 관리</button><hr style="margin: 18px 0; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">선수 선택 (조회/피드백)</h3><div id="playerPickArea">목록을 불러오는 중입니다...</div>`;
+    let baseHtml = `<button class="btn btn-black" onclick="showDashboard()"><i class="fa fa-table-columns"></i> 전체 대시보드</button><button class="btn btn-outline" onclick="showAnalytics()"><i class="fa fa-chart-pie"></i> 📊 심층 분석 대시보드</button><button class="btn btn-outline" onclick="showByType()"><i class="fa fa-layer-group"></i> 주기화별로 보기</button><button class="btn btn-outline" onclick="showMatchEvaluations()"><i class="fa fa-futbol"></i> ⚽ 경기 평가 관리</button><button class="btn btn-outline" onclick="showBugReportsView()" style="color:#ea580c; border-color:#fed7aa; background:#fff7ed; font-weight:800;"><i class="fa fa-bug"></i> 🐞 오류 제보 내역</button><hr style="margin: 18px 0; border:0; border-top: 1px dashed #cbd5e1;"><h3 style="margin-top:0;">선수 선택 (조회/피드백)</h3><div id="playerPickArea">목록을 불러오는 중입니다...</div>`;
     sb.innerHTML = baseHtml;
     const res = await api({ action:'listUsers' });
     if (!res.ok) { document.getElementById('playerPickArea').innerHTML = `<div style="color:var(--red); font-size:12px;">오류: ${res.error}</div>`; return; }
@@ -3243,6 +3437,430 @@ async function exportExcel(){
   XLSX.writeFile(wb, `FC_SEOUL_전체데이터_백업_${dateStr(new Date())}.xlsx`);
   loading(false);
   uiToast('엑셀 파일(전체 통합본)이 다운로드되었습니다.');
+}
+
+/* ==================== 🐞 오류 및 불편사항 제보 시스템 ==================== */
+
+function openBugReportModal(){
+  const modal = document.getElementById('bugReportModalOverlay');
+  if(!modal) return;
+  const isAdmin = currentUser && (currentUser.isAdmin || currentUser.role === 'coach');
+  const tabListBtn = document.getElementById('bugTabList');
+  if (tabListBtn) {
+    tabListBtn.innerText = isAdmin ? '전체 제보 내역 (관리자)' : '내 제보 내역';
+  }
+  switchBugModalTab('new');
+  modal.style.display = 'flex';
+}
+
+function closeBugReportModal(){
+  const modal = document.getElementById('bugReportModalOverlay');
+  if(modal) modal.style.display = 'none';
+}
+
+function switchBugModalTab(tab){
+  const btnNew = document.getElementById('bugTabNew');
+  const btnList = document.getElementById('bugTabList');
+  const contentNew = document.getElementById('bugTabContentNew');
+  const contentList = document.getElementById('bugTabContentList');
+
+  if(tab === 'new'){
+    if(btnNew) {
+      btnNew.style.background = 'white';
+      btnNew.style.color = '#0f172a';
+      btnNew.style.fontWeight = '700';
+      btnNew.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    }
+    if(btnList) {
+      btnList.style.background = 'transparent';
+      btnList.style.color = '#64748b';
+      btnList.style.fontWeight = '600';
+      btnList.style.boxShadow = 'none';
+    }
+    if(contentNew) contentNew.style.display = 'block';
+    if(contentList) contentList.style.display = 'none';
+  } else {
+    if(btnList) {
+      btnList.style.background = 'white';
+      btnList.style.color = '#0f172a';
+      btnList.style.fontWeight = '700';
+      btnList.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+    }
+    if(btnNew) {
+      btnNew.style.background = 'transparent';
+      btnNew.style.color = '#64748b';
+      btnNew.style.fontWeight = '600';
+      btnNew.style.boxShadow = 'none';
+    }
+    if(contentNew) contentNew.style.display = 'none';
+    if(contentList) contentList.style.display = 'block';
+    loadBugReportsForModal();
+  }
+}
+
+async function submitBugReportAction(){
+  const textarea = document.getElementById('bugReportContent');
+  const content = textarea ? textarea.value.trim() : '';
+  if (!content) {
+    uiToast('오류나 불편하신 내용을 입력해주세요.', 'warning');
+    if (textarea) textarea.focus();
+    return;
+  }
+
+  const btn = document.getElementById('btnSubmitBugReport');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 제보 접수 중...'; }
+
+  try {
+    const screenRes = `${window.innerWidth}x${window.innerHeight}`;
+    const logs = Array.isArray(window._systemLogs) ? window._systemLogs.slice(-50) : [];
+    const res = await api({
+      action: 'submitBugReport',
+      userId: currentUser ? currentUser.id : 'anonymous',
+      userName: currentUser ? currentUser.name : '익명',
+      userRole: currentUser ? currentUser.role : 'player',
+      content,
+      screen: screenRes,
+      userAgent: navigator.userAgent,
+      systemLogs: logs
+    });
+
+    if (res && res.ok) {
+      if (textarea) textarea.value = '';
+      uiToast('소중한 오류 제보가 성공적으로 접수되었습니다! 신속히 확인하겠습니다.');
+      switchBugModalTab('list');
+    } else {
+      await uiAlert(res?.error || '제보 등록에 실패했습니다. 다시 시도해주세요.', '오류');
+    }
+  } catch (err) {
+    await uiAlert('통신 오류가 발생했습니다: ' + err.message, '오류');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa fa-paper-plane"></i> 제보하기';
+    }
+  }
+}
+
+async function loadBugReportsForModal(){
+  const container = document.getElementById('bugModalListContainer');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> 제보 내역을 불러오는 중...</div>';
+  
+  const isAdmin = currentUser && (currentUser.isAdmin || currentUser.role === 'coach');
+  try {
+    const res = await api({
+      action: 'listBugReports',
+      requesterId: currentUser ? currentUser.id : '',
+      isAdmin
+    }, true);
+
+    if (res && res.ok && Array.isArray(res.reports)) {
+      if (res.reports.length === 0) {
+        container.innerHTML = `
+          <div style="text-align:center; padding:40px 20px; color:#94a3b8;">
+            <i class="fa fa-clipboard-check" style="font-size:36px; color:#cbd5e1; margin-bottom:12px; display:block;"></i>
+            ${isAdmin ? '등록된 오류 제보가 없습니다.' : '아직 작성하신 제보 내역이 없습니다.'}
+          </div>`;
+        return;
+      }
+      container.innerHTML = res.reports.map(r => renderBugReportCardHtml(r, isAdmin, true)).join('');
+    } else {
+      container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--red);">불러오기 실패: ${res?.error || '알 수 없는 오류'}</div>`;
+    }
+  } catch(e) {
+    container.innerHTML = `<div style="text-align:center; padding:20px; color:var(--red);">통신 오류: ${e.message}</div>`;
+  }
+}
+
+async function showBugReportsView(){
+  if (!currentUser || (!currentUser.isAdmin && currentUser.role !== 'coach')) {
+    uiAlert('오류 제보 내역은 관리자 계정에서만 확인하실 수 있습니다.', '접근 권한 제한');
+    return;
+  }
+  hidePanels();
+  const wrap = document.getElementById('bugReportsWrapper');
+  if (wrap) wrap.style.display = 'block';
+  await loadAdminBugReports();
+}
+
+async function loadAdminBugReports(){
+  const card = document.getElementById('bugReportsCard');
+  if (!card) return;
+  card.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; padding-bottom:14px; border-bottom:2px solid #fed7aa; flex-wrap:wrap; gap:10px;">
+      <h2 style="margin:0; font-size:20px; font-weight:800; color:#ea580c; display:flex; align-items:center; gap:8px;">
+        <i class="fa fa-bug" style="color:#ea580c;"></i> 오류 제보 내역
+        <span id="bugReportCountBadge" style="font-size:13px; font-weight:normal; color:#64748b; margin-left:6px;"></span>
+      </h2>
+      <div style="display:flex; gap:8px;">
+        <button class="btn btn-outline" style="width:auto; padding:6px 14px; font-size:12.5px;" onclick="loadAdminBugReports()"><i class="fa fa-rotate-right"></i> 새로고침</button>
+      </div>
+    </div>
+    <div id="adminBugReportsList"><div style="text-align:center; padding:40px; color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> 제보 목록을 불러오는 중...</div></div>
+  `;
+
+  try {
+    const res = await api({
+      action: 'listBugReports',
+      requesterId: currentUser ? currentUser.id : '',
+      isAdmin: true
+    }, true);
+
+    const listDiv = document.getElementById('adminBugReportsList');
+    const badge = document.getElementById('bugReportCountBadge');
+    if (!listDiv) return;
+
+    if (res && res.ok && Array.isArray(res.reports)) {
+      if (badge) badge.innerText = `(총 ${res.reports.length}건)`;
+      if (res.reports.length === 0) {
+        listDiv.innerHTML = `
+          <div style="text-align:center; padding:50px 20px; color:#94a3b8;">
+            <i class="fa fa-check-circle" style="font-size:42px; color:#86efac; margin-bottom:14px; display:block;"></i>
+            <div style="font-size:16px; font-weight:700; color:#1e293b;">접수된 오류 제보가 없습니다.</div>
+            <div style="font-size:13px; color:#64748b; margin-top:4px;">시스템이 원활하게 작동 중입니다.</div>
+          </div>`;
+        return;
+      }
+      listDiv.innerHTML = res.reports.map(r => renderBugReportCardHtml(r, true, false)).join('');
+    } else {
+      listDiv.innerHTML = `<div style="text-align:center; padding:30px; color:var(--red);">불러오기 실패: ${res?.error || '오류 발생'}</div>`;
+    }
+  } catch(e) {
+    const listDiv = document.getElementById('adminBugReportsList');
+    if (listDiv) listDiv.innerHTML = `<div style="text-align:center; padding:30px; color:var(--red);">통신 오류: ${e.message}</div>`;
+  }
+}
+
+function renderBugReportCardHtml(r, isAdmin, isCompact = false) {
+  const formattedDate = r.createdAtFormatted || (new Date(r.createdAt)).toLocaleString('ko-KR');
+  const roleLabel = r.userRole === 'coach' ? '지도자' : '선수';
+  const logsCount = (r.systemLogs || []).length;
+  const replyDate = r.adminReplyDate || '';
+  const escapedContent = esc(r.content);
+  const escapedReply = esc(r.adminReply || '');
+  const logsText = esc((r.systemLogs || []).join('\n'));
+
+  return `
+    <div id="bugCard_${r.id}" style="background:white; border:1px solid #e2e8f0; border-radius:12px; padding:${isCompact ? '16px' : '22px'}; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,0.04); transition:all 0.2s;">
+      
+      <!-- Card Top: Name, Date, Copy & Delete buttons (Screenshot 3) -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <span style="font-size:${isCompact ? '15px' : '17px'}; font-weight:800; color:#0f172a;">${esc(r.userName || r.userId)}</span>
+          <span style="font-size:11px; padding:2px 7px; border-radius:12px; background:#f1f5f9; color:#475569; font-weight:600;">${roleLabel}</span>
+          <span style="font-size:12.5px; color:#64748b;">${formattedDate}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <button onclick="copyBugReportText('${r.id}')" title="내용 복사" style="background:none; border:none; color:#64748b; font-size:15px; cursor:pointer; padding:4px 6px; border-radius:4px; display:inline-flex; align-items:center;">
+            <i class="fa fa-copy"></i>
+          </button>
+          ${isAdmin ? `
+          <button onclick="deleteBugReportAction('${r.id}')" title="제보 삭제" style="background:none; border:none; color:#ef4444; font-size:15px; cursor:pointer; padding:4px 6px; border-radius:4px; display:inline-flex; align-items:center;">
+            <i class="fa fa-trash"></i>
+          </button>` : ''}
+        </div>
+      </div>
+
+      <!-- Report Content -->
+      <div id="bugContent_${r.id}" style="background:#f8fafc; border-radius:8px; padding:14px 16px; font-size:14px; line-height:1.65; color:#1e293b; white-space:pre-wrap; border:1px solid #f1f5f9;">${escapedContent}</div>
+
+      <!-- Diagnostics Info: System Logs Accordion & Screen size (Screenshot 3) -->
+      <div style="margin-top:12px;">
+        ${logsCount > 0 ? `
+        <div onclick="toggleBugSystemLogs('${r.id}')" style="font-size:13px; font-weight:700; color:#3b82f6; cursor:pointer; display:inline-flex; align-items:center; gap:4px; user-select:none;">
+          <span id="logArrow_${r.id}">▶</span> 시스템 로그 보기 (${logsCount}건)
+        </div>
+        <div id="systemLogsBox_${r.id}" style="display:none; margin-top:8px; background:#0f172a; color:#38bdf8; font-family:monospace; font-size:11.5px; line-height:1.5; padding:12px 14px; border-radius:8px; max-height:180px; overflow-y:auto; white-space:pre-wrap;">${logsText}</div>
+        ` : ''}
+        <div style="font-size:12px; color:#64748b; margin-top:6px;">Screen: ${esc(r.screen || '알 수 없음')}</div>
+      </div>
+
+      <!-- Administrator Reply Box (Yellow box in Screenshot 3) -->
+      <div style="background:#fffbeb; border:1px solid #fef3c7; border-radius:10px; padding:14px 16px; margin-top:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="font-size:13px; font-weight:800; color:#92400e; display:flex; align-items:center; gap:6px;">
+            <i class="fa fa-comment-dots"></i> 관리자 답변
+            ${replyDate ? `<span style="font-size:12px; font-weight:normal; color:#b45309; margin-left:4px;">${replyDate}</span>` : ''}
+          </div>
+          ${isAdmin ? `
+          <button onclick="toggleReplyEditor('${r.id}')" style="background:none; border:none; color:#b45309; font-size:12px; font-weight:700; cursor:pointer; text-decoration:underline;">
+            ${r.adminReply ? '답변 수정' : '답변 작성'}
+          </button>` : ''}
+        </div>
+
+        <!-- Rendered Reply -->
+        <div id="replyText_${r.id}" style="font-size:13.5px; color:#78350f; line-height:1.6; white-space:pre-wrap; ${!r.adminReply ? 'display:none;' : ''}">${escapedReply}</div>
+        
+        ${!r.adminReply && !isAdmin ? `
+        <div style="font-size:12.5px; color:#b45309; font-style:italic;">관리자 검토 중입니다. 곧 답변을 드리겠습니다.</div>
+        ` : ''}
+
+        <!-- Admin Reply Editor (only visible to admin when clicked or if no reply yet) -->
+        ${isAdmin ? `
+        <div id="replyEditor_${r.id}" style="${r.adminReply ? 'display:none;' : 'display:block;'} margin-top:10px;">
+          <textarea id="replyTextarea_${r.id}" placeholder="선수에게 전달할 관리자 답변을 작성해주세요..." style="width:100%; border:1px solid #fcd34d; border-radius:8px; padding:10px; font-size:13px; line-height:1.5; min-height:65px; box-sizing:border-box; outline:none; background:white; font-family:inherit;">${r.adminReply || ''}</textarea>
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+            <button onclick="saveAdminReply('${r.id}')" style="background:#ea580c; color:white; border:none; border-radius:6px; padding:6px 14px; font-size:12px; font-weight:800; cursor:pointer; box-shadow:0 1px 3px rgba(234,88,12,0.3);">
+              답변 저장
+            </button>
+          </div>
+        </div>` : ''}
+      </div>
+
+    </div>
+  `;
+}
+
+function toggleBugSystemLogs(reportId) {
+  const box = document.getElementById('systemLogsBox_' + reportId);
+  const arrow = document.getElementById('logArrow_' + reportId);
+  if (!box) return;
+  const isHidden = box.style.display === 'none' || box.style.display === '';
+  box.style.display = isHidden ? 'block' : 'none';
+  if (arrow) arrow.innerText = isHidden ? '▼' : '▶';
+}
+
+function copyBugReportText(reportId) {
+  const el = document.getElementById('bugContent_' + reportId);
+  if (!el) return;
+  const text = el.innerText || el.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    uiToast('제보 내용이 클립보드에 복사되었습니다.');
+  }).catch(() => {
+    uiToast('복사되었습니다.');
+  });
+}
+
+function toggleReplyEditor(reportId) {
+  const editor = document.getElementById('replyEditor_' + reportId);
+  if (!editor) return;
+  const isHidden = editor.style.display === 'none';
+  editor.style.display = isHidden ? 'block' : 'none';
+}
+
+async function saveAdminReply(reportId) {
+  const textarea = document.getElementById('replyTextarea_' + reportId);
+  if (!textarea) return;
+  const adminReply = textarea.value.trim();
+  loading(true, '관리자 답변을 저장하는 중...');
+  try {
+    const res = await api({
+      action: 'replyBugReport',
+      reportId,
+      adminReply,
+      requesterId: currentUser ? currentUser.id : ''
+    });
+    loading(false);
+    if (res && res.ok) {
+      uiToast('관리자 답변이 저장되었습니다.');
+      const replyTextEl = document.getElementById('replyText_' + reportId);
+      if (replyTextEl) {
+        replyTextEl.innerText = adminReply;
+        replyTextEl.style.display = adminReply ? 'block' : 'none';
+      }
+      const editor = document.getElementById('replyEditor_' + reportId);
+      if (editor && adminReply) editor.style.display = 'none';
+    } else {
+      await uiAlert(res?.error || '답변 저장 실패', '오류');
+    }
+  } catch (err) {
+    loading(false);
+    await uiAlert('통신 오류: ' + err.message, '오류');
+  }
+}
+
+async function deleteBugReportAction(reportId) {
+  if (!(await uiConfirm('이 오류 제보 내역을 삭제하시겠습니까?\n삭제 후에는 복구할 수 없습니다.', '제보 삭제'))) return;
+  loading(true, '제보를 삭제하는 중...');
+  try {
+    const res = await api({
+      action: 'deleteBugReport',
+      reportId,
+      requesterId: currentUser ? currentUser.id : ''
+    });
+    loading(false);
+    if (res && res.ok) {
+      uiToast('삭제되었습니다.');
+      const card = document.getElementById('bugCard_' + reportId);
+      if (card) card.remove();
+    } else {
+      await uiAlert(res?.error || '삭제 실패', '오류');
+    }
+  } catch(e) {
+    loading(false);
+    await uiAlert('오류: ' + e.message, '오류');
+  }
+}
+
+/* ==========================================================================
+   📢 업데이트 공지 배너 (Update Notice Banner)
+   - 새로운 기능 또는 버그 수정 시 UPDATES 배열 최상단(0번 인덱스)에 새 버전 추가
+   - '7일간 안보기' 클릭 시 localStorage에 만료 일시 저장
+   - 배너 버전(id) 변경 시 기존 7일 안보기와 무관하게 새 공지 즉시 노출
+   ========================================================================== */
+const UPDATES = [
+  {
+    id: 'v1.2.0',
+    date: '2026-09-27',
+    changes: [
+      '오류 및 불편사항 제보 시스템 신설 (우측 하단 버그 버튼 및 시스템 로그 자동 첨부)',
+      '관리자 전용 오류 제보 내역 조회, 클립보드 복사 및 답변 관리 기능 추가',
+      '경기 평가 화면 명칭 정리 및 원형 프로필 사진 실시간 변경 기능 최적화'
+    ]
+  },
+  {
+    id: 'v1.1.0',
+    date: '2026-09-26',
+    changes: [
+      '전/후반 포지션 실시간 경기 평가 시스템 개편',
+      '선수별 원형 프로필 사진 및 변경 기능 탑재'
+    ]
+  },
+  {
+    id: 'v1.0.0',
+    date: '2026-09-25',
+    changes: [
+      'FC 서울 U13 트레이닝 일지 서비스 정식 런칭'
+    ]
+  }
+];
+
+function initUpdateBanner() {
+  if (!UPDATES || !UPDATES.length) return;
+  const latestUpdate = UPDATES[0];
+  const banner = document.getElementById('updateBanner');
+  if (!banner) return;
+
+  // 버전별 '7일간 안보기' 만료 일시 확인
+  const hiddenUntil = localStorage.getItem(`hide_update_${latestUpdate.id}`);
+  if (hiddenUntil) {
+    const expiry = parseInt(hiddenUntil, 10);
+    if (Date.now() < expiry) {
+      banner.style.display = 'none';
+      return;
+    }
+  }
+
+  // 최신 업데이트 내용 렌더링
+  const dateEl = document.getElementById('updateBannerDate');
+  const verEl = document.getElementById('updateBannerVersion');
+  const listEl = document.getElementById('updateBannerList');
+  if (dateEl) dateEl.innerText = latestUpdate.date;
+  if (verEl) verEl.innerText = latestUpdate.id;
+  if (listEl) {
+    listEl.innerHTML = (latestUpdate.changes || []).map(item => `<li>${item}</li>`).join('');
+  }
+  banner.style.display = 'block';
+}
+
+function hideUpdateBanner() {
+  if (!UPDATES || !UPDATES.length) return;
+  const latestUpdate = UPDATES[0];
+  const hideDuration = 7 * 24 * 60 * 60 * 1000; // 7일 (밀리초)
+  localStorage.setItem(`hide_update_${latestUpdate.id}`, (Date.now() + hideDuration).toString());
+  const banner = document.getElementById('updateBanner');
+  if (banner) banner.style.display = 'none';
+  uiToast('공지 배너를 7일간 숨깁니다.');
 }
 </script>
 </body>

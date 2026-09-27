@@ -547,7 +547,85 @@ async function handleApiRequest(req, res) {
         return res.json({ ok: true, users, entries, matches, diaries });
       }
 
-      // 21. 파일 / 사진 / 동영상 업로드
+      // 21. 오류 및 불편사항 제보 등록
+      case 'submitBugReport': {
+        const { userId, userName, userRole, content, screen, userAgent, systemLogs } = payload;
+        if (!content || !content.trim()) return res.json({ ok: false, error: '제보 내용을 입력해주세요.' });
+        const reportId = 'report_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const now = new Date();
+        const reportData = {
+          id: reportId,
+          userId: userId || 'anonymous',
+          userName: userName || '익명',
+          userRole: userRole || 'player',
+          content: content.trim(),
+          screen: screen || '',
+          userAgent: userAgent || '',
+          systemLogs: Array.isArray(systemLogs) ? systemLogs.slice(-50) : [],
+          createdAt: now.toISOString(),
+          createdAtFormatted: now.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: true
+          }),
+          status: 'pending',
+          adminReply: '',
+          adminReplyDate: ''
+        };
+        await setDoc(doc(db, 'bugReports', reportId), reportData);
+        return res.json({ ok: true, report: reportData });
+      }
+
+      // 22. 오류 제보 목록 조회 (관리자는 전체, 일반 선수는 본인 것만)
+      case 'listBugReports': {
+        const { requesterId, isAdmin } = payload;
+        const reportsSnap = await getDocs(collection(db, 'bugReports'));
+        const reports = [];
+        reportsSnap.forEach(d => {
+          const r = d.data();
+          if (isAdmin || r.userId === requesterId) {
+            reports.push(r);
+          }
+        });
+        reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        return res.json({ ok: true, reports });
+      }
+
+      // 23. 오류 제보 답변 등록/수정 (관리자 전용)
+      case 'replyBugReport': {
+        const { reportId, adminReply } = payload;
+        if (!reportId) return res.json({ ok: false, error: '제보 ID가 필요합니다.' });
+        const now = new Date();
+        const dateStr = now.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+          hour12: true
+        });
+        await updateDoc(doc(db, 'bugReports', reportId), {
+          adminReply: adminReply || '',
+          adminReplyDate: adminReply ? dateStr : '',
+          status: adminReply ? 'replied' : 'pending'
+        });
+        return res.json({ ok: true, adminReply, adminReplyDate: dateStr });
+      }
+
+      // 24. 오류 제보 삭제 (관리자 전용)
+      case 'deleteBugReport': {
+        const { reportId } = payload;
+        if (!reportId) return res.json({ ok: false, error: '제보 ID가 필요합니다.' });
+        await deleteDoc(doc(db, 'bugReports', reportId));
+        return res.json({ ok: true });
+      }
+
+      // 25. 파일 / 사진 / 동영상 업로드
       case 'uploadFile': {
         const fileContent = payload.base64 || payload.fileData || payload.data;
         const fname = payload.filename || payload.fileName || 'file';

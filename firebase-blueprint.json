@@ -69,6 +69,25 @@
         "createdAt": { "type": "string", "description": "Creation timestamp" }
       },
       "required": ["matchId", "playerId", "matchDate"]
+    },
+    "BugReport": {
+      "title": "BugReport",
+      "description": "User submitted error and issue reports",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique report ID" },
+        "userId": { "type": "string", "description": "ID of submitting user" },
+        "userName": { "type": "string", "description": "Name of submitting user" },
+        "userRole": { "type": "string", "description": "Role of submitting user" },
+        "content": { "type": "string", "description": "Report description text" },
+        "screen": { "type": "string", "description": "Screen resolution at time of report" },
+        "userAgent": { "type": "string", "description": "Browser user agent" },
+        "systemLogs": { "type": "array", "description": "List of recent system logs" },
+        "adminReply": { "type": "string", "description": "Administrator response" },
+        "adminReplyDate": { "type": "string", "description": "Date of administrator response" },
+        "createdAt": { "type": "string", "description": "Submission ISO timestamp" }
+      },
+      "required": ["id", "userId", "content"]
     }
   },
   "firestore": {
@@ -87,6 +106,10 @@
     "/matchEvaluations/{matchId}": {
       "schema": { "$ref": "#/entities/MatchEvaluation" },
       "description": "Collection of match evaluations"
+    },
+    "/bugReports/{reportId}": {
+      "schema": { "$ref": "#/entities/BugReport" },
+      "description": "Collection of user bug and issue reports"
     }
   }
 }
