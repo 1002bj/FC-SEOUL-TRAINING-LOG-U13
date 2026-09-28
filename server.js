@@ -31,6 +31,35 @@ const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || '(def
 // Google Spreadsheet Web App URL for live synchronization
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
 
+// KST (Asia/Seoul, UTC+9) date formatter to prevent 1-day lag from UTC timestamps
+function formatDateKST(isoString) {
+  if (!isoString) return '';
+  if (isoString instanceof Date) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(isoString);
+  }
+  if (typeof isoString !== 'string') return String(isoString);
+  if (isoString.includes('T')) {
+    try {
+      const d = new Date(isoString);
+      if (!isNaN(d.getTime())) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Seoul',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      }
+    } catch (e) {}
+    return isoString.split('T')[0];
+  }
+  return isoString;
+}
+
 // Ensure Nginx directly routes /api to bypass any auth bridge redirects and worker caching
 function setupNginxApiBypass() {
   try {
@@ -491,19 +520,24 @@ async function handleApiRequest(req, res) {
         const q = query(collection(db, 'diaries'), where('playerId', '==', playerId));
         const snap = await getDocs(q);
         const diary = [];
-        snap.forEach(d => diary.push(d.data()));
+        snap.forEach(d => {
+          const item = d.data();
+          if (item.date) item.date = formatDateKST(item.date);
+          diary.push(item);
+        });
         return res.json({ ok: true, diary });
       }
 
       // 14. 포토 일지 저장
       case 'saveDiary': {
         const { playerId, playerName, date, photoUrl, memo } = payload;
-        const diaryId = `diary_${playerId}_${date}_${Date.now()}`;
+        const cleanDate = formatDateKST(date);
+        const diaryId = `diary_${playerId}_${cleanDate}_${Date.now()}`;
         const diaryData = {
           diaryId,
           playerId,
           playerName,
-          date,
+          date: cleanDate,
           photoUrl: photoUrl || '',
           memo: memo || '',
           createdAt: new Date().toISOString()
@@ -588,12 +622,24 @@ async function handleApiRequest(req, res) {
           });
         });
         const entries = [];
-        entriesSnap.forEach(d => entries.push(d.data()));
+        entriesSnap.forEach(d => {
+          const item = d.data();
+          if (item.weekStartDate) item.weekStartDate = formatDateKST(item.weekStartDate);
+          entries.push(item);
+        });
         const matches = [];
-        matchesSnap.forEach(d => matches.push(d.data()));
+        matchesSnap.forEach(d => {
+          const item = d.data();
+          if (item.matchDate) item.matchDate = formatDateKST(item.matchDate);
+          matches.push(item);
+        });
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
         const diaries = [];
-        diariesSnap.forEach(d => diaries.push(d.data()));
+        diariesSnap.forEach(d => {
+          const item = d.data();
+          if (item.date) item.date = formatDateKST(item.date);
+          diaries.push(item);
+        });
         return res.json({ ok: true, users, entries, matches, diaries });
       }
 
@@ -759,9 +805,11 @@ async function handleApiRequest(req, res) {
                   const dData = await dRes.json();
                   if (dData && dData.ok && Array.isArray(dData.diary)) {
                     for (const d of dData.diary) {
-                      const diaryId = d.diaryId || `diary_${u.id}_${d.date}_${Date.now()}`;
+                      const cleanDate = formatDateKST(d.date);
+                      const diaryId = d.diaryId || `diary_${u.id}_${cleanDate}_${Date.now()}`;
                       d.diaryId = diaryId;
                       d.playerId = String(u.id);
+                      if (d.date) d.date = cleanDate;
                       d.importedAt = new Date().toISOString();
                       await setDoc(doc(db, 'diaries', diaryId), d, { merge: true });
                       diaryCount++;

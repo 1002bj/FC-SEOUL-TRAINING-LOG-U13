@@ -900,18 +900,23 @@ window.runClientApi = async function(payload) {
         const q = query(collection(db, 'diaries'), where('playerId', '==', playerId));
         const snap = await getDocs(q);
         const diary = [];
-        snap.forEach(d => diary.push(d.data()));
+        snap.forEach(d => {
+          const item = d.data();
+          if (item.date) item.date = formatDateLocal(item.date);
+          diary.push(item);
+        });
         return { ok: true, diary };
       }
 
       case 'saveDiary': {
         const { playerId, playerName, date, photoUrl, memo } = payload;
-        const diaryId = `diary_${playerId}_${date}_${Date.now()}`;
+        const cleanDate = formatDateLocal(date);
+        const diaryId = `diary_${playerId}_${cleanDate}_${Date.now()}`;
         const diaryData = {
           diaryId,
           playerId,
           playerName,
-          date,
+          date: cleanDate,
           photoUrl: photoUrl || '',
           memo: memo || '',
           createdAt: new Date().toISOString()
@@ -975,12 +980,24 @@ window.runClientApi = async function(payload) {
           });
         });
         const entries = [];
-        entriesSnap.forEach(d => entries.push(d.data()));
+        entriesSnap.forEach(d => {
+          const item = d.data();
+          if (item.weekStartDate) item.weekStartDate = formatDateLocal(item.weekStartDate);
+          entries.push(item);
+        });
         const matches = [];
-        matchesSnap.forEach(d => matches.push(d.data()));
+        matchesSnap.forEach(d => {
+          const item = d.data();
+          if (item.matchDate) item.matchDate = formatDateLocal(item.matchDate);
+          matches.push(item);
+        });
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
         const diaries = [];
-        diariesSnap.forEach(d => diaries.push(d.data()));
+        diariesSnap.forEach(d => {
+          const item = d.data();
+          if (item.date) item.date = formatDateLocal(item.date);
+          diaries.push(item);
+        });
         return { ok: true, users, entries, matches, diaries };
       }
 
@@ -1171,21 +1188,57 @@ const avg = arr => !arr || !arr.length ? 0 : Math.round(arr.reduce((a,b)=>a+(b||
 
 function parseLocalDate(str) {
   if(!str) return new Date();
-  const parts = str.split('-');
-  if(parts.length === 3) return new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
+  if (typeof str === 'string' && str.includes('T')) {
+    str = formatDateLocal(str);
+  }
+  const parts = String(str).split('-');
+  if(parts.length === 3) return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10)-1, parseInt(parts[2], 10));
   return new Date(str);
 }
 const formatDateLocal = isoString => {
-  if (!isoString || typeof isoString !== 'string') return isoString;
+  if (!isoString) return '';
+  if (isoString instanceof Date) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(isoString);
+  }
+  if (typeof isoString !== 'string') return String(isoString);
   if (isoString.includes('T')) {
-    const d = new Date(isoString);
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    try {
+      const d = new Date(isoString);
+      if (!isNaN(d.getTime())) {
+        return new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Seoul',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(d);
+      }
+    } catch (e) {}
+    return isoString.split('T')[0];
   }
   return isoString;
 };
 const dateStr = d => {
-  const offset = d.getTimezoneOffset() * 60000;
-  return new Date(d.getTime() - offset).toISOString().slice(0,10);
+  if (!d) return '';
+  if (typeof d === 'string') {
+    if (d.includes('T')) return formatDateLocal(d);
+    return d;
+  }
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(d);
+  } catch (e) {
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0,10);
+  }
 };
 const monday = d => { const dt=new Date(d); const day=dt.getDay(); dt.setDate(dt.getDate()-day+(day===0?-6:1)); dt.setHours(0,0,0,0); return dt; };
 const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1377,8 +1430,22 @@ const CLOUD_BACKEND_URL = "https://ais-dev-aywb3voaaouyxiutggw5pj-162743634034.a
 let activeBackendTier = null; // 'local', 'cloud', or 'direct'
 
 function postProcessData(data) {
-  if (data && data.entries) data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
-  if (data && data.diary) data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+  if (!data) return;
+  if (data.entries && Array.isArray(data.entries)) {
+    data.entries.forEach(e => { if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate); });
+  }
+  if (data.diary && Array.isArray(data.diary)) {
+    data.diary.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+  }
+  if (data.diaries && Array.isArray(data.diaries)) {
+    data.diaries.forEach(d => { if (d.date) d.date = formatDateLocal(d.date); });
+  }
+  if (data.matches && Array.isArray(data.matches)) {
+    data.matches.forEach(m => { if (m.matchDate) m.matchDate = formatDateLocal(m.matchDate); });
+  }
+  if (data.matchEvaluations && Array.isArray(data.matchEvaluations)) {
+    data.matchEvaluations.forEach(m => { if (m.matchDate) m.matchDate = formatDateLocal(m.matchDate); });
+  }
 }
 
 function backendUrl(){
@@ -2377,7 +2444,7 @@ async function loadDiaryList(){
   el.innerHTML = '목록을 불러오는 중...';
   const res = await api({ action:'listDiary', playerId: currentPlayerId });
   if (!res.ok) { el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
-  diaryListCache = res.diary.map(d => { if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0]; return d; }).sort((a,b) => new Date(b.date) - new Date(a.date));
+  diaryListCache = res.diary.map(d => { if(d.date) d.date = formatDateLocal(d.date); return d; }).sort((a,b) => new Date(b.date) - new Date(a.date));
   renderCalendar(); 
   const recent7 = diaryListCache.slice(0, 7); 
   if (!recent7.length) { el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>'; return; }
@@ -3543,11 +3610,10 @@ function renderDashboardFromData(res) {
   const allDiariesMap = {};
   players.forEach(p => {
     allDiariesMap[p.id] = (res.diaries || []).filter(d => d.playerId === p.id).map(d => {
-      if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0];
+      if (d.date) d.date = formatDateLocal(d.date);
       return d;
     });
   });
-
 
   const thisMonday = dateStr(monday(new Date()));
   const types = Object.keys(JOURNAL_TYPES);
@@ -3555,7 +3621,10 @@ function renderDashboardFromData(res) {
 
   const rows = players.map(p => {
     const cycleCells = types.map(t => {
-      const es = (res.entries || []).filter(e => e.playerId===p.id && e.type===t && e.playerScores).sort((a,b)=> new Date(b.weekStartDate)-new Date(a.weekStartDate));
+      const es = (res.entries || []).filter(e => e.playerId===p.id && e.type===t && e.playerScores).map(e => {
+        if (e.weekStartDate) e.weekStartDate = formatDateLocal(e.weekStartDate);
+        return e;
+      }).sort((a,b)=> new Date(b.weekStartDate)-new Date(a.weekStartDate));
       const latest = es[0];
       if (!latest) return `<td class="dash-cell" style="text-align:center; color:#cbd5e1; padding:8px; border:1px solid #e2e8f0;" onclick="uiToast('작성된 일지가 없습니다.','info')">미작성</td>`;
       const done = latest.weekStartDate >= thisMonday;
@@ -3564,7 +3633,10 @@ function renderDashboardFromData(res) {
       return `<td class="dash-cell" style="text-align:center; padding:8px; border:1px solid #e2e8f0; background:${done?'#f0fdf4':'white'};" onclick="openDashboardEntry('${p.id}', '${esc(p.name)}', '${t}', '${latest.entryId}')"><div style="font-size:10px; color:${done?'#16a34a':'#ef4444'}; font-weight:bold;">${done?'✔ 이번 바퀴 작성':'⚠ '+(latest.weekLabel||latest.weekStartDate)}</div><div style="font-size:10.5px;">시도 ${attAvg}회 / 성공 ${sucAvg}회</div></td>`;
     }).join('');
 
-    const pMatches = (res.matches || []).filter(m => m.playerId === p.id).sort((a,b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
+    const pMatches = (res.matches || []).filter(m => m.playerId === p.id).map(m => {
+      if (m.matchDate) m.matchDate = formatDateLocal(m.matchDate);
+      return m;
+    }).sort((a,b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
     const latestMatch = pMatches.length > 0 ? pMatches[0] : null;
     let matchCell = '';
     if (!latestMatch) {
@@ -3574,6 +3646,7 @@ function renderDashboardFromData(res) {
       const opp = latestMatch.opponent ? `vs ${esc(latestMatch.opponent)}` : '경기';
       const pos1 = latestMatch.firstHalfPosition || '미출전';
       const pos2 = latestMatch.secondHalfPosition || '미출전';
+      const posInfo = `${pos1}/${pos2}`;
       const timeStr = (latestMatch.playingTime != null && latestMatch.playingTime !== '') ? `${latestMatch.playingTime}분` : '';
       const rateInfo = latestMatch.successRate || (latestMatch.attempts > 0 ? Math.round((latestMatch.successes / latestMatch.attempts) * 100) + '%' : '-');
       matchCell = `<td class="dash-cell" style="text-align:center; padding:8px; border:1px solid #e2e8f0; background:${doneThisWeek?'#f0fdf4':'white'};" onclick="openDashboardMatch('${p.id}', '${esc(p.name)}', '${latestMatch.id || latestMatch.matchId}')"><div style="font-size:10px; color:${doneThisWeek?'#16a34a':'#0284c7'}; font-weight:bold;">${latestMatch.matchDate} ${opp} ${timeStr ? `<span style="background:#e0f2fe; color:#0284c7; padding:1px 5px; border-radius:4px; font-size:9.5px; margin-left:3px;">${timeStr}</span>` : ''}</div><div style="font-size:10.5px; color:#475569; margin-top:2px;">${posInfo} <span style="font-weight:bold; color:var(--red);">(${rateInfo})</span></div></td>`;
@@ -3670,6 +3743,7 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
 
 async function openDashboardDiary(playerId, playerName, targetDate) {
   if(!targetDate) return uiToast('작성된 포토일지가 없습니다.', 'info');
+  targetDate = formatDateLocal(targetDate);
   currentPlayerId = playerId; currentPlayerName = playerName; sidebarMode = 'diary';
   const playerSel = document.getElementById('playerSelect'); if (playerSel) playerSel.value = playerId;
   const detailArea = document.getElementById('playerDetailArea');
@@ -3678,7 +3752,7 @@ async function openDashboardDiary(playerId, playerName, targetDate) {
   api({ action:'listDiary', playerId: currentPlayerId }, true).then(res => {
     if(res.ok) {
       document.getElementById('sidebarBody').innerHTML = `<h3 style="margin-top:0;">${currentPlayerName} 최근 일지</h3><div id="diaryList">불러오는 중...</div><div class="sidebar-cal"><div class="cal-header"><button onclick="changeCalMonth(-1)"><i class="fa fa-chevron-left"></i></button><span id="calTitle"></span><button onclick="changeCalMonth(1)"><i class="fa fa-chevron-right"></i></button></div><div class="cal-grid" id="calGrid"></div></div>`;
-      diaryListCache = res.diary.map(d => { if(String(d.date).includes('T')) d.date = String(d.date).split('T')[0]; return d; }).sort((a,b) => new Date(b.date) - new Date(a.date));
+      diaryListCache = res.diary.map(d => { if(d.date) d.date = formatDateLocal(d.date); return d; }).sort((a,b) => new Date(b.date) - new Date(a.date));
       const d = new Date(parseLocalDate(targetDate)); calDate = new Date(d.getFullYear(), d.getMonth(), 1); renderCalendar(); viewDiaryByDate(targetDate); 
       const recent7 = diaryListCache.slice(0, 7); const el = document.getElementById('diaryList');
       if (!recent7.length) el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 사진이 없습니다.</div>';
@@ -4655,7 +4729,7 @@ async function exportExcel(){
 
   const diarySheetData = allDiaries.map(d => ({
     '선수명': d.playerName,
-    '작성 날짜': String(d.date).split('T')[0],
+    '작성 날짜': formatDateLocal(d.date),
     '메모 내용': d.memo || '',
     '사진 URL': d.photoUrl || '',
     '시스템 등록일시': d.createdAt || ''
@@ -5058,6 +5132,15 @@ async function deleteBugReportAction(reportId) {
    - 배너 버전(id) 변경 시 기존 7일 안보기와 무관하게 새 공지 즉시 노출
    ========================================================================== */
 const UPDATES = [
+  {
+    id: 'v1.7.1',
+    date: '2026-09-29',
+    changes: [
+      '전체 대시보드 포토 일지 날짜 표시 표준시(KST) 동기화 오류 수정 (하루 전 날짜로 나오던 현상 해결)',
+      '대시보드에서 포토 일지 클릭 시 해당 날짜의 일지 상세 및 캘린더 일치 연동 개선',
+      '전체 대시보드 경기 평가 포지션 표시 안정성 보강'
+    ]
+  },
   {
     id: 'v1.7.0',
     date: '2026-09-28',
