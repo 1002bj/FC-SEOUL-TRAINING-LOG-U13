@@ -440,6 +440,51 @@ async function handleApiRequest(req, res) {
         return res.json({ ok: true });
       }
 
+      // 12-1. 주기화 일지 정보(이름, 시작일, 유형) 단건 수정 및 이동
+      case 'updateEntryMeta': {
+        const { entryId, weekLabel, weekStartDate, type } = payload;
+        if (!entryId) return res.json({ ok: false, error: 'entryId가 필요합니다.' });
+        const ref = doc(db, 'entries', entryId);
+        const updates = { updatedAt: new Date().toISOString() };
+        if (weekLabel !== undefined) updates.weekLabel = weekLabel;
+        if (weekStartDate !== undefined) updates.weekStartDate = weekStartDate;
+        if (type !== undefined) updates.type = type;
+        await setDoc(ref, updates, { merge: true });
+        return res.json({ ok: true });
+      }
+
+      // 12-2. 파편화된 주기화 일지 하나로 묶기 (일괄 날짜/바퀴명/유형 통일)
+      case 'batchUpdateEntryMeta': {
+        const { entryIds, targetWeekLabel, targetWeekStartDate, targetType } = payload;
+        if (!Array.isArray(entryIds) || entryIds.length === 0) {
+          return res.json({ ok: false, error: '선택된 일지가 없습니다.' });
+        }
+        const updates = { updatedAt: new Date().toISOString() };
+        if (targetWeekLabel) updates.weekLabel = targetWeekLabel;
+        if (targetWeekStartDate) updates.weekStartDate = targetWeekStartDate;
+        if (targetType) updates.type = targetType;
+
+        const promises = entryIds.map(id => setDoc(doc(db, 'entries', id), updates, { merge: true }));
+        await Promise.all(promises);
+        return res.json({ ok: true, count: entryIds.length });
+      }
+
+      // 12-3. 경기 평가 일괄 수정 및 하나로 묶기 (경기명/일자 통일)
+      case 'batchUpdateMatchMeta': {
+        const { matchIds, targetMatchDate, targetOpponent, targetPeriodTopic } = payload;
+        if (!Array.isArray(matchIds) || matchIds.length === 0) {
+          return res.json({ ok: false, error: '선택된 경기 평가가 없습니다.' });
+        }
+        const updates = { updatedAt: new Date().toISOString() };
+        if (targetMatchDate) updates.matchDate = targetMatchDate;
+        if (targetOpponent !== undefined) updates.opponent = targetOpponent;
+        if (targetPeriodTopic) updates.periodTopic = targetPeriodTopic;
+
+        const promises = matchIds.map(id => setDoc(doc(db, 'matchEvaluations', id), updates, { merge: true }));
+        await Promise.all(promises);
+        return res.json({ ok: true, count: matchIds.length });
+      }
+
       // 13. 포토 일지 목록
       case 'listDiary': {
         const { playerId } = payload;

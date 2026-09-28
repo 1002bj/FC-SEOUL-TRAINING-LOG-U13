@@ -551,6 +551,121 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
   </div>
 </div>
 
+<!-- 🧩 1. 주기화 일지 단건 이름/날짜 수정 및 이동 모달 -->
+<div id="editEntryModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:10001; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:white; border-radius:16px; width:92%; max-width:480px; box-shadow:0 20px 45px rgba(0,0,0,0.28); padding:22px 24px; position:relative; box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="margin:0; font-size:17px; font-weight:900; color:#0f172a; display:flex; align-items:center; gap:8px;">
+        <i class="fa fa-pen-to-square" style="color:#0284c7;"></i> <span id="editEntryModalTitle">주기화 일지 정보 수정 및 이동</span>
+      </h3>
+      <button onclick="closeEditEntryModal()" style="border:none; background:none; font-size:20px; color:#94a3b8; cursor:pointer;">&times;</button>
+    </div>
+    
+    <div style="font-size:12px; color:#64748b; margin-bottom:14px; background:#f8fafc; padding:10px 12px; border-radius:8px; border:1px solid #e2e8f0;">
+      선수: <b id="editEntryPlayerName" style="color:#0f172a;"></b> · 현재: <span id="editEntryCurrentInfo" style="font-weight:bold; color:#0284c7;"></span>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">일지 유형 (주기화 선택)</label>
+      <select id="editEntryType" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; background:white;">
+        <option value="pass">⚽ 패스 주기화</option>
+        <option value="touch">🎯 터치 주기화</option>
+        <option value="dribble">⚡ 드리블 주기화</option>
+      </select>
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">시작일 (월요일 기준)</label>
+      <input type="date" id="editEntryDate" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">바퀴 이름 (예: 1바퀴, 2바퀴)</label>
+      <input type="text" id="editEntryLabel" placeholder="예: 1바퀴" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+    </div>
+
+    <!-- Quick pick from existing team cycles -->
+    <div style="margin-bottom:18px;">
+      <label style="font-size:11px; color:#64748b; display:block; margin-bottom:4px;">⚡ 기존 등록된 팀 바퀴에서 선택하여 맞추기 (하나로 묶기)</label>
+      <select id="editEntryQuickPick" onchange="onEditEntryQuickPick(this.value)" style="width:100%; padding:6px 10px; border:1px dashed #94a3b8; border-radius:6px; font-size:12px; background:#f8fafc; color:#334155;">
+        <option value="">-- 기존 팀 바퀴 선택 시 날짜/이름 자동 입력 --</option>
+      </select>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button onclick="closeEditEntryModal()" class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:12px;">취소</button>
+      <button onclick="submitEditEntryMeta()" class="btn btn-red" style="width:auto; padding:8px 18px; font-size:12px;"><i class="fa fa-check"></i> 수정 및 이동 적용</button>
+    </div>
+  </div>
+</div>
+
+<!-- 🧩 2. 파편화된 주기화 하나로 묶기 및 일괄 정리 매니저 모달 -->
+<div id="cycleMergeModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:10001; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:white; border-radius:16px; width:94%; max-width:680px; box-shadow:0 20px 45px rgba(0,0,0,0.28); padding:24px 26px; position:relative; max-height:90vh; overflow-y:auto; box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="width:38px; height:38px; border-radius:50%; background:#fff7ed; display:flex; align-items:center; justify-content:center; color:#ea580c; font-size:18px;">
+          <i class="fa fa-object-group"></i>
+        </div>
+        <div>
+          <h3 style="margin:0; font-size:17.5px; font-weight:900; color:#0f172a;">파편화된 주기화 하나로 묶기 / 일괄 정리</h3>
+          <div style="font-size:12px; color:#64748b; margin-top:2px;">날짜나 바퀴 이름이 달라 분산된 일지들을 하나의 기준 바퀴로 통일합니다.</div>
+        </div>
+      </div>
+      <button onclick="closeCycleMergeManager()" style="border:none; background:none; font-size:22px; color:#94a3b8; cursor:pointer;">&times;</button>
+    </div>
+
+    <!-- Cycle Type Selector Tabs -->
+    <div style="display:flex; gap:6px; margin-bottom:16px; background:#f1f5f9; padding:4px; border-radius:8px;">
+      <button id="mergeTabPass" onclick="switchMergeManagerType('pass')" style="flex:1; border:none; padding:7px 10px; border-radius:6px; font-size:12.5px; font-weight:800; cursor:pointer; background:white; color:#0f172a; box-shadow:0 1px 3px rgba(0,0,0,0.1);">⚽ 패스 주기화</button>
+      <button id="mergeTabTouch" onclick="switchMergeManagerType('touch')" style="flex:1; border:none; padding:7px 10px; border-radius:6px; font-size:12.5px; font-weight:800; cursor:pointer; background:transparent; color:#64748b;">🎯 터치 주기화</button>
+      <button id="mergeTabDribble" onclick="switchMergeManagerType('dribble')" style="flex:1; border:none; padding:7px 10px; border-radius:6px; font-size:12.5px; font-weight:800; cursor:pointer; background:transparent; color:#64748b;">⚡ 드리블 주기화</button>
+    </div>
+
+    <div id="cycleMergeModalBody">
+      <!-- Generated content -->
+    </div>
+  </div>
+</div>
+
+<!-- ⚽ 3. 경기 평가 일괄 수정 및 하나로 묶기 모달 -->
+<div id="matchGroupEditModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:10001; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+  <div style="background:white; border-radius:16px; width:92%; max-width:480px; box-shadow:0 20px 45px rgba(0,0,0,0.28); padding:22px 24px; position:relative; box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="margin:0; font-size:17px; font-weight:900; color:#0f172a; display:flex; align-items:center; gap:8px;">
+        <span style="color:#E30613;">⚽</span> <span>경기 정보 수정 및 하나로 묶기</span>
+      </h3>
+      <button onclick="closeEditMatchGroupModal()" style="border:none; background:none; font-size:20px; color:#94a3b8; cursor:pointer;">&times;</button>
+    </div>
+
+    <div style="font-size:12px; color:#64748b; margin-bottom:14px; background:#f8fafc; padding:10px 12px; border-radius:8px; border:1px solid #e2e8f0;">
+      선수들이 상대팀명을 다르게 적었거나 날짜가 다른 경우, 이름을 통일하면 한 경기로 자동 합쳐집니다.
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">경기 일자</label>
+      <input type="date" id="matchGroupDate" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+    </div>
+
+    <div style="margin-bottom:12px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">상대팀 / 경기 종류 이름 (통일할 이름)</label>
+      <input type="text" id="matchGroupOpponent" placeholder="예: 광운중학교" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+    </div>
+
+    <div style="margin-bottom:18px;">
+      <label style="font-size:11.5px; font-weight:bold; color:#475569; display:block; margin-bottom:4px;">주기화 주제 이동 (선택)</label>
+      <select id="matchGroupTopic" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:12.5px; background:white;">
+        <option value="">-- 변경하지 않음 (현재 유지) --</option>
+      </select>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:8px;">
+      <button onclick="closeEditMatchGroupModal()" class="btn btn-outline" style="width:auto; padding:8px 14px; font-size:12px;">취소</button>
+      <button onclick="submitEditMatchGroup()" class="btn btn-red" style="width:auto; padding:8px 18px; font-size:12px;"><i class="fa fa-check"></i> 저장 및 묶기 적용</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { 
@@ -948,6 +1063,46 @@ window.runClientApi = async function(payload) {
         return { ok: true, adminReply, adminReplyDate: dateStr };
       }
 
+      case 'updateEntryMeta': {
+        const { entryId, weekLabel, weekStartDate, type } = payload;
+        if (!entryId) return { ok: false, error: 'entryId가 필요합니다.' };
+        const ref = doc(db, 'entries', entryId);
+        const updates = { updatedAt: new Date().toISOString() };
+        if (weekLabel !== undefined) updates.weekLabel = weekLabel;
+        if (weekStartDate !== undefined) updates.weekStartDate = weekStartDate;
+        if (type !== undefined) updates.type = type;
+        await setDoc(ref, updates, { merge: true });
+        return { ok: true };
+      }
+
+      case 'batchUpdateEntryMeta': {
+        const { entryIds, targetWeekLabel, targetWeekStartDate, targetType } = payload;
+        if (!Array.isArray(entryIds) || entryIds.length === 0) {
+          return { ok: false, error: '선택된 일지가 없습니다.' };
+        }
+        const updates = { updatedAt: new Date().toISOString() };
+        if (targetWeekLabel) updates.weekLabel = targetWeekLabel;
+        if (targetWeekStartDate) updates.weekStartDate = targetWeekStartDate;
+        if (targetType) updates.type = targetType;
+        const promises = entryIds.map(id => setDoc(doc(db, 'entries', id), updates, { merge: true }));
+        await Promise.all(promises);
+        return { ok: true, count: entryIds.length };
+      }
+
+      case 'batchUpdateMatchMeta': {
+        const { matchIds, targetMatchDate, targetOpponent, targetPeriodTopic } = payload;
+        if (!Array.isArray(matchIds) || matchIds.length === 0) {
+          return { ok: false, error: '선택된 경기 평가가 없습니다.' };
+        }
+        const updates = { updatedAt: new Date().toISOString() };
+        if (targetMatchDate) updates.matchDate = targetMatchDate;
+        if (targetOpponent !== undefined) updates.opponent = targetOpponent;
+        if (targetPeriodTopic) updates.periodTopic = targetPeriodTopic;
+        const promises = matchIds.map(id => setDoc(doc(db, 'matchEvaluations', id), updates, { merge: true }));
+        await Promise.all(promises);
+        return { ok: true, count: matchIds.length };
+      }
+
       case 'deleteBugReport': {
         const { reportId } = payload;
         if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
@@ -1152,6 +1307,35 @@ function uiConfirm(msg, title='확인') {
     }
     btnOk.onclick = () => close(true);
     btnCancel.onclick = () => close(false);
+  });
+}
+
+function uiPrompt(msg, defaultVal='', title='입력') {
+  return new Promise(resolve => {
+    document.getElementById('uiModalTitle').innerText = title;
+    document.getElementById('uiModalText').innerHTML = `
+      <div style="margin-bottom:10px; font-size:13px; color:#334155; line-height:1.5;">${msg.replace(/\n/g, '<br>')}</div>
+      <input type="text" id="uiPromptInput" value="${esc(defaultVal)}" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+    `;
+    document.getElementById('uiModalBtnCancel').style.display = 'block';
+    const btnOk = document.getElementById('uiModalBtnOk');
+    const btnCancel = document.getElementById('uiModalBtnCancel');
+    const overlay = document.getElementById('uiModalOverlay');
+    overlay.style.display = 'flex';
+    setTimeout(() => {
+      document.querySelector('.ui-modal').classList.add('show');
+      const input = document.getElementById('uiPromptInput');
+      if (input) { input.focus(); input.select(); }
+    }, 10);
+    const close = (val) => {
+      document.querySelector('.ui-modal').classList.remove('show');
+      setTimeout(() => { overlay.style.display = 'none'; resolve(val); }, 250);
+    };
+    btnOk.onclick = () => {
+      const input = document.getElementById('uiPromptInput');
+      close(input ? input.value : '');
+    };
+    btnCancel.onclick = () => close(null);
   });
 }
 
@@ -1684,14 +1868,19 @@ async function loadArchive(){
   if (!res.ok) { if(el) el.innerHTML = '목록을 불러오지 못했습니다.'; return; }
   if (!res.entries.length) { if(el) el.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 일지가 없습니다.</div>'; return; }
   
-  const canDel = true; 
+  const isCoach = currentUser && currentUser.role === 'coach';
   if(el) el.innerHTML = res.entries.map(en => `
-    <div class="list-item">
+    <div class="list-item" style="display:flex; justify-content:space-between; align-items:center;">
       <span onclick="loadEntry('${en.entryId}')" style="flex:1; cursor:pointer; font-weight:bold;">
         <i class="fa fa-file-alt" style="margin-right:6px; color:#94a3b8;"></i>
         ${en.weekLabel||''} <span style="color:#94a3b8; font-weight:normal; font-size:10px; margin-left:4px;">(${en.weekStartDate})</span>
       </span>
-      <i class="fa fa-trash" style="color:#ef4444; cursor:pointer; padding:4px;" onclick="event.stopPropagation(); deleteEntry('${en.entryId}')"></i>
+      <div style="display:flex; gap:4px; align-items:center;">
+        ${isCoach ? `
+          <button class="btn btn-outline" style="width:auto; padding:2px 7px; font-size:10.5px; border-color:#cbd5e1; background:white;" title="바퀴 이름 및 시작일 수정 / 이동" onclick="event.stopPropagation(); openEditEntryModal('${en.entryId}', '${esc(en.weekLabel||'')}', '${en.weekStartDate}', '${en.type}', '${currentPlayerId}', '${esc(currentPlayerName)}')"><i class="fa fa-pen"></i> 수정</button>
+        ` : ''}
+        <i class="fa fa-trash" style="color:#ef4444; cursor:pointer; padding:4px;" onclick="event.stopPropagation(); deleteEntry('${en.entryId}')"></i>
+      </div>
     </div>`).join('');
 }
 
@@ -1778,7 +1967,7 @@ function renderJournal(){
 
   const photo = isPlayer ? (currentUser.photo||'') : ((playersInfo[currentPlayerId]||{}).photo||'');
   let html = `<div class="j-title">${photo?`<img src="${photo}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:8px;border:2px solid var(--gold);">`:''}${JOURNAL_TYPES[currentEntry.type].title} — ${currentEntry.playerName||''}</div>`;
-  html += `<div class="j-meta">${currentEntry.weekLabel||''} · 시작일: ${currentEntry.weekStartDate}</div>`;
+  html += `<div class="j-meta">${currentEntry.weekLabel||''} · 시작일: ${currentEntry.weekStartDate} ${isCoach ? `<button class="btn btn-outline" style="width:auto; padding:2px 8px; font-size:11px; margin-left:8px; border-color:#cbd5e1; background:white; vertical-align:middle;" onclick="openEditEntryModal('${currentEntry.entryId}', '${esc(currentEntry.weekLabel||'')}', '${currentEntry.weekStartDate}', '${currentEntry.type}', '${currentEntry.playerId}', '${esc(currentEntry.playerName)}')"><i class="fa fa-pen"></i> 바퀴 이름/시작일 수정</button>` : ''}</div>`;
   
   // 🌟 모바일 전용 탭(버튼) 렌더링
   html += `<div class="mobile-tabs">
@@ -3034,8 +3223,6 @@ function renderMatchListArea() {
         badgeBg = '#f1f5f9'; badgeColor = '#475569'; borderLeft = '#94a3b8';
       }
 
-      const pendingCount = topicMatches.filter(m => !m.coachFeedback || m.coachFeedback.trim() === '').length;
-
       html += `
         <div style="background: white; border: 1px solid #e2e8f0; border-left: 5px solid ${borderLeft}; border-radius: 8px; margin-bottom: 22px; box-shadow: 0 2px 6px rgba(0,0,0,0.04); overflow: hidden;">
           <!-- Topic Header -->
@@ -3047,12 +3234,16 @@ function renderMatchListArea() {
               <span style="font-weight: 900; font-size: 15px; color: #0f172a;">
                 ${tKey.includes(':') ? tKey.split(':')[1].trim() : tKey}
               </span>
+              ${isCoach ? `
+                <button class="btn btn-outline" style="width:auto; padding:2px 8px; font-size:11px; background:white; border-color:#cbd5e1; color:#334155; font-weight:800;" onclick="openEditMatchTopicModal('${esc(tKey)}')">
+                  <i class="fa fa-pen"></i> 주제명 수정/묶기
+                </button>
+              ` : ''}
             </div>
             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
               <span style="font-size: 12px; color: #64748b; font-weight: bold;">
                 총 ${sortedMatchKeys.length}개 경기 · 출전 연인원 ${topicMatches.length}명
               </span>
-              ${pendingCount > 0 ? `<span style="background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 12px;">⚠ 피드백 대기 ${pendingCount}건</span>` : `<span style="background: #dcfce7; color: #166534; font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 12px;">✔ 피드백 완료</span>`}
             </div>
           </div>
 
@@ -3061,13 +3252,19 @@ function renderMatchListArea() {
             ${sortedMatchKeys.map(mKey => {
               const mg = matchGroups[mKey];
               const totalPlayTime = mg.players.reduce((sum, p) => sum + (parseInt(p.playingTime) || 0), 0);
+              const mIdsJson = JSON.stringify(mg.players.map(p => p.id || p.matchId)).replace(/"/g, '&quot;');
               return `
                 <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 14px; overflow: hidden;">
                   <!-- Match Header -->
                   <div style="background: #eef2f6; padding: 10px 14px; border-bottom: 1px solid #cbd5e1; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                    <div style="font-weight: 900; font-size: 13.5px; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                    <div style="font-weight: 900; font-size: 13.5px; color: #1e293b; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                       <span style="color: #E30613;">⚽</span>
                       <span>${mg.matchDate} ${mg.opponent ? `vs ${mg.opponent}` : '경기'}</span>
+                      ${isCoach ? `
+                        <button class="btn btn-outline" style="width:auto; padding:2px 7px; font-size:10.5px; background:white; border-color:#cbd5e1; color:#475569;" onclick="openEditMatchGroupModal(${mIdsJson}, '${mg.matchDate}', '${esc(mg.opponent)}', '${esc(tKey)}')">
+                          <i class="fa fa-pen"></i> 경기 정보 수정/묶기
+                        </button>
+                      ` : ''}
                     </div>
                     <div style="display: flex; gap: 6px; align-items: center;">
                       <span style="background: white; border: 1px solid #cbd5e1; color: #334155; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 12px;">
@@ -3088,7 +3285,6 @@ function renderMatchListArea() {
                           <th style="padding: 8px 12px; text-align: left;">오늘의 IDP 개인 목표</th>
                           <th style="padding: 8px 8px; text-align: center;">시도 / 성공</th>
                           <th style="padding: 8px 8px; text-align: center;">성공률</th>
-                          <th style="padding: 8px 10px; text-align: center;">지도자 피드백</th>
                           <th style="padding: 8px 10px; text-align: center;">관리</th>
                         </tr>
                       </thead>
@@ -3109,7 +3305,7 @@ function renderMatchListArea() {
                                 <span style="color: #94a3b8; margin: 0 1px;">/</span>
                                 <span style="background: #f0f9ff; color: #0284c7; font-weight: 800; font-size: 11px; padding: 2px 6px; border-radius: 4px;">${p.secondHalfPosition || '-'}</span>
                               </td>
-                              <td style="padding: 10px 12px; max-width: 250px;">
+                              <td style="padding: 10px 12px; max-width: 260px;">
                                 <div style="font-size: 11.5px; color: #334155; font-weight: 500;">${p.idpGoal || '<span style="color:#94a3b8;">목표 미작성</span>'}</div>
                                 ${p.playerFeedback ? `<div style="font-size: 10.5px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${esc(p.playerFeedback)}">소감: ${esc(p.playerFeedback)}</div>` : ''}
                               </td>
@@ -3118,12 +3314,6 @@ function renderMatchListArea() {
                               </td>
                               <td style="padding: 10px 8px; text-align: center; font-weight: 900; color: #E30613; font-size: 13px; white-space: nowrap;">
                                 ${p.successRate || '0%'}
-                              </td>
-                              <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">
-                                ${p.coachFeedback ? 
-                                  `<span style="background: #dcfce7; color: #166534; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 4px;"><i class="fa fa-check-circle"></i> 피드백 완료</span>` : 
-                                  `<button class="btn btn-outline" style="width: auto; padding: 3px 8px; font-size: 11px; background: #fff7ed; color: #c2410c; border-color: #fdba74; font-weight: 800;" onclick="loadMatchIntoForm('${p.id || p.matchId}')"><i class="fa fa-comment-dots"></i> 피드백 작성</button>`
-                                }
                               </td>
                               <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">
                                 <button class="btn btn-outline" style="width:auto; padding:3px 7px; font-size:11px; margin-right:4px;" onclick="loadMatchIntoForm('${p.id || p.matchId}')"><i class="fa fa-pen"></i> 수정</button>
@@ -3157,7 +3347,6 @@ function renderMatchListArea() {
               <th style="padding:10px 12px; text-align:left;">주제 및 IDP 목표</th>
               <th style="padding:10px 8px; text-align:center;">시도 / 성공</th>
               <th style="padding:10px 8px; text-align:center;">성공률</th>
-              <th style="padding:10px 10px; text-align:center;">피드백 현황</th>
               <th style="padding:10px 10px; text-align:center;">관리</th>
             </tr>
           </thead>
@@ -3177,7 +3366,7 @@ function renderMatchListArea() {
                   <span style="color:#94a3b8;">/</span>
                   <span style="background:#f0f9ff; color:#0284c7; font-weight:bold; font-size:11px; padding:2px 6px; border-radius:4px;">${m.secondHalfPosition || '-'}</span>
                 </td>
-                <td style="padding:12px; max-width:240px;">
+                <td style="padding:12px; max-width:260px;">
                   <div style="font-weight:bold; color:#1e293b; font-size:12px;">${m.periodTopic || '-'}</div>
                   <div style="font-size:11px; color:#64748b; margin-top:2px;">목표: ${m.idpGoal || '-'}</div>
                 </td>
@@ -3186,9 +3375,6 @@ function renderMatchListArea() {
                 </td>
                 <td style="padding:12px 8px; text-align:center; font-weight:900; color:#E30613; font-size:13.5px;">
                   ${m.successRate || '0%'}
-                </td>
-                <td style="padding:12px 10px; text-align:center; font-size:11px;">
-                  ${m.coachFeedback ? '<span style="background:#dcfce7; color:#166534; font-weight:bold; padding:2px 6px; border-radius:4px;">피드백 완료</span>' : '<span style="background:#f1f5f9; color:#64748b; padding:2px 6px; border-radius:4px;">피드백 대기</span>'}
                 </td>
                 <td style="padding:12px 10px; text-align:center; white-space:nowrap;">
                   <button class="btn btn-outline" style="width:auto; padding:4px 8px; font-size:11px; margin-right:4px;" onclick="loadMatchIntoForm('${m.id || m.matchId}')"><i class="fa fa-pen"></i> 수정</button>
@@ -3362,11 +3548,6 @@ function renderDashboardFromData(res) {
     });
   });
 
-  const pendingFeedbacks = (res.entries || []).filter(e => { const noText = !e.coachFeedback || e.coachFeedback.trim() === ''; return noText; }).sort((a,b) => new Date(b.weekStartDate) - new Date(a.weekStartDate));
-  let pendingHtml = '';
-  if (pendingFeedbacks.length > 0) {
-    pendingHtml = `<div class="alert-box"><h4><i class="fa fa-bell"></i> 지도자 피드백 요망 (${pendingFeedbacks.length}건)</h4><div style="max-height:160px; overflow-y:auto;">${pendingFeedbacks.map(pf => `<div class="alert-item" onclick="openDashboardEntry('${pf.playerId}', '${esc(pf.playerName)}', '${pf.type}', '${pf.entryId}')"><span><b>${pf.playerName}</b> · ${JOURNAL_TYPES[pf.type].title}</span><span>${(pf.weekLabel||pf.weekStartDate)} <i class="fa fa-arrow-right" style="margin-left:4px; opacity:0.5;"></i></span></div>`).join('')}</div></div>`;
-  }
 
   const thisMonday = dateStr(monday(new Date()));
   const types = Object.keys(JOURNAL_TYPES);
@@ -3411,7 +3592,7 @@ function renderDashboardFromData(res) {
     return `<tr style="border-bottom:1px solid #eee;"><td style="font-weight:bold; padding:8px; white-space:nowrap; border:1px solid #e2e8f0; border-left:none;">${p.photo?`<img src="${p.photo}" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</td>${cycleCells}${matchCell}${diaryCell}</tr>`;
   }).join('');
 
-  document.getElementById('dashboardCard').innerHTML = `${pendingHtml}<h2 style="margin:0 0 4px;">전체 대시보드</h2><div style="font-size:11px; color:#64748b; margin-bottom:16px;">이번 바퀴(${thisMonday}~) 기준 작성 현황 (클릭 시 일지로 바로 이동)</div><div style="display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap;"><div style="flex:1; min-width:140px; background:#fff5f5; border:1px solid #f1948a; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (시도 횟수)</div><div style="font-size:24px; font-weight:900; color:var(--red);">${count?Math.round(pSum/count*10)/10:0}회</div></div><div style="flex:1; min-width:140px; background:#f0f9ff; border:1px solid #7dd3fc; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (성공 횟수)</div><div style="font-size:24px; font-weight:900; color:#0284c7;">${count?Math.round(cSum/count*10)/10:0}회</div></div></div><div class="table-responsive"><table style="width:100%; border-collapse:collapse; font-size:11.5px; min-width:720px;"><thead><tr style="background:var(--black); color:white;"><th style="padding:10px 8px; text-align:left; border-right:1px solid #475569;">선수</th>${types.map(t=>`<th style="padding:10px 8px; border-right:1px solid #475569;">${JOURNAL_TYPES[t].title}</th>`).join('')}<th style="padding:10px 8px; border-right:1px solid #475569;">⚽ 경기 평가</th><th style="padding:10px 8px;">📷 포토 일지</th></tr></thead><tbody>${rows || `<tr><td colspan="${types.length+3}" style="text-align:center; color:#94a3b8; padding:20px;">등록된 선수가 없습니다.</td></tr>`}</tbody></table></div>`;
+  document.getElementById('dashboardCard').innerHTML = `<h2 style="margin:0 0 4px;">전체 대시보드</h2><div style="font-size:11px; color:#64748b; margin-bottom:16px;">이번 바퀴(${thisMonday}~) 기준 작성 현황 (클릭 시 일지로 바로 이동)</div><div style="display:flex; gap:14px; margin-bottom:20px; flex-wrap:wrap;"><div style="flex:1; min-width:140px; background:#fff5f5; border:1px solid #f1948a; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (시도 횟수)</div><div style="font-size:24px; font-weight:900; color:var(--red);">${count?Math.round(pSum/count*10)/10:0}회</div></div><div style="flex:1; min-width:140px; background:#f0f9ff; border:1px solid #7dd3fc; border-radius:8px; padding:14px; text-align:center;"><div style="font-size:11px; color:#64748b;">팀 평균 (성공 횟수)</div><div style="font-size:24px; font-weight:900; color:#0284c7;">${count?Math.round(cSum/count*10)/10:0}회</div></div></div><div class="table-responsive"><table style="width:100%; border-collapse:collapse; font-size:11.5px; min-width:720px;"><thead><tr style="background:var(--black); color:white;"><th style="padding:10px 8px; text-align:left; border-right:1px solid #475569;">선수</th>${types.map(t=>`<th style="padding:10px 8px; border-right:1px solid #475569;">${JOURNAL_TYPES[t].title}</th>`).join('')}<th style="padding:10px 8px; border-right:1px solid #475569;">⚽ 경기 평가</th><th style="padding:10px 8px;">📷 포토 일지</th></tr></thead><tbody>${rows || `<tr><td colspan="${types.length+3}" style="text-align:center; color:#94a3b8; padding:20px;">등록된 선수가 없습니다.</td></tr>`}</tbody></table></div>`;
 }
 
 function renderDashboardSkeleton() {
@@ -3799,8 +3980,12 @@ async function showByType(){
 
   function renderByTypeShell() {
     const types = Object.keys(JOURNAL_TYPES);
+    const isCoach = currentUser && currentUser.role === 'coach';
     document.getElementById('byTypeCard').innerHTML = `
-      <h2 style="margin:0 0 14px;">주기화별로 보기</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px;">
+        <h2 style="margin:0;">주기화별로 보기</h2>
+        ${isCoach ? `<button class="btn btn-outline" style="width:auto; padding:7px 14px; font-size:12px; background:#fff7ed; color:#c2410c; border-color:#fdba74; font-weight:800;" onclick="openCycleMergeManager()"><i class="fa fa-object-group"></i> 🧩 파편화된 주기화 하나로 묶기 / 이동</button>` : ''}
+      </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px; position:relative; z-index:100;">
         <select id="byTypeType" onchange="onByTypeTypeChange()" style="flex:1; min-width:120px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;">${types.map(t=>`<option value="${t}">${JOURNAL_TYPES[t].title}</option>`).join('')}</select>
         <select id="byTypeWeek" onchange="onByTypeWeekChange()" style="flex:1; min-width:160px; border:1px solid #cbd5e1; padding:8px; border-radius:5px; pointer-events:auto;"><option value="">-- 저장된 바퀴에서 선택 --</option></select>
@@ -3825,10 +4010,26 @@ async function showByType(){
 }
 function refreshByTypeWeeks(){
   const type = document.getElementById('byTypeType').value;
-  const map = {};
-  byTypeCache.entries.filter(e=>e.type===type).forEach(e => map[e.weekStartDate] = e.weekLabel || e.weekStartDate);
-  const weeks = Object.keys(map).sort((a,b)=> new Date(b)-new Date(a));
-  document.getElementById('byTypeWeek').innerHTML = '<option value="">-- 저장된 바퀴에서 선택 --</option>' + weeks.map(w=>`<option value="${w}">${map[w]} (${w})</option>`).join('');
+  const entriesOfType = (byTypeCache && byTypeCache.entries) ? byTypeCache.entries.filter(e=>e.type===type) : [];
+  
+  // Group by weekStartDate
+  const dateGroups = {};
+  entriesOfType.forEach(e => {
+    if (!dateGroups[e.weekStartDate]) dateGroups[e.weekStartDate] = [];
+    dateGroups[e.weekStartDate].push(e);
+  });
+
+  const weeks = Object.keys(dateGroups).sort((a,b)=> new Date(b)-new Date(a));
+  let optionsHtml = '<option value="">-- 저장된 바퀴에서 선택 --</option>';
+  weeks.forEach(w => {
+    const list = dateGroups[w];
+    const labels = [...new Set(list.map(e => (e.weekLabel || '').trim() || e.weekStartDate))];
+    const isFragmented = labels.length > 1;
+    const labelDisplay = labels.join(', ');
+    optionsHtml += `<option value="${w}">${labelDisplay} (${w})${isFragmented ? ' ⚠️이름분산' : ''}</option>`;
+  });
+  const sel = document.getElementById('byTypeWeek');
+  if (sel) sel.innerHTML = optionsHtml;
 }
 function onByTypeTypeChange(){ refreshByTypeWeeks(); document.getElementById('byTypeDate').value=''; document.getElementById('byTypeResults').innerHTML=''; }
 function onByTypeWeekChange(){
@@ -3841,21 +4042,567 @@ function onByTypeDateChange(){
 }
 function renderByTypeResults(type, week){
   const players = byTypeCache.users.filter(u=>u.role==='player');
+  const isCoach = currentUser && currentUser.role === 'coach';
   const submitted = [], missing = [];
   players.forEach(p => {
     const entry = byTypeCache.entries.find(e => e.playerId===p.id && e.type===type && e.weekStartDate===week);
     (entry ? submitted.push({p,entry}) : missing.push(p));
   });
+
+  // Check for fragmented labels among submitted entries
+  const labelCounts = {};
+  submitted.forEach(s => {
+    const lbl = (s.entry.weekLabel || '').trim() || s.entry.weekStartDate;
+    labelCounts[lbl] = (labelCounts[lbl] || 0) + 1;
+  });
+  const distinctLabels = Object.keys(labelCounts);
+  const isFragmented = distinctLabels.length > 1;
+  const dominantLabel = distinctLabels.sort((a,b) => labelCounts[b] - labelCounts[a])[0] || '1바퀴';
+
+  let coachBarHtml = '';
+  if (isCoach && submitted.length > 0) {
+    coachBarHtml = `
+      ${isFragmented ? `
+        <div style="background:#fff7ed; border:1.5px solid #fed7aa; border-radius:10px; padding:12px 16px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div style="font-weight:900; color:#c2410c; font-size:13.5px; display:flex; align-items:center; gap:6px;">
+              <i class="fa fa-triangle-exclamation"></i> 같은 날짜인데 선수들이 입력한 바퀴 이름이 ${distinctLabels.length}가지로 파편화되어 있습니다!
+            </div>
+            <div style="font-size:11.5px; color:#475569; margin-top:3px;">
+              입력된 이름들: ${distinctLabels.map(l => `<b>'${esc(l)}'</b> (${labelCounts[l]}명)`).join(', ')}
+            </div>
+          </div>
+          <button class="btn btn-red" style="width:auto; padding:6px 14px; font-size:12px; font-weight:800;" onclick="quickUnifyWeekLabel('${type}', '${week}', '${esc(dominantLabel)}')">
+            <i class="fa fa-wand-magic-sparkles"></i> 가장 많은 '${esc(dominantLabel)}'(으)로 모두 통일하기
+          </button>
+        </div>
+      ` : ''}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:#f8fafc; padding:10px 14px; border-radius:8px; border:1px solid #e2e8f0; flex-wrap:wrap; gap:8px;">
+        <span style="font-size:12.5px; color:#334155;">
+          기준 시작일: <b>${week}</b> · 현재 바퀴 이름: <b style="color:#0284c7;">${distinctLabels.join(', ') || week}</b> (${submitted.length}명 제출)
+        </span>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-outline" style="width:auto; padding:5px 11px; font-size:11.5px; background:white;" onclick="promptRenameWeekLabel('${type}', '${week}')">
+            <i class="fa fa-pen"></i> 이 바퀴 이름 일괄 변경
+          </button>
+          <button class="btn btn-outline" style="width:auto; padding:5px 11px; font-size:11.5px; color:#c2410c; border-color:#fdba74; background:#fff7ed; font-weight:800;" onclick="openCycleMergeManager('${type}', '${week}')">
+            <i class="fa fa-object-group"></i> 다른 바퀴와 하나로 묶기 / 이동
+          </button>
+        </div>
+      </div>
+    `;
+  }
   
   document.getElementById('byTypeResults').innerHTML = `
+    ${coachBarHtml}
     <div style="display:flex; gap:24px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:220px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
-        ${submitted.length ? submitted.map(s=>`<div class="list-item" style="cursor:pointer;" onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')">
-          <span>${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
-          <span style="font-size:10px; color:#64748b;">평균 시도 ${(s.entry.dailyAttempts ? avg(s.entry.playerScores) : 0)} / 성공 ${(s.entry.dailyAttempts ? avg(s.entry.coachScores) : 0)}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
+      <div style="flex:1; min-width:260px;"><h4 style="color:#16a34a;">✔ 제출함 (${submitted.length})</h4>
+        ${submitted.length ? submitted.map(s=>`
+          <div class="list-item" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div onclick="openDashboardEntry('${s.p.id}','${esc(s.p.name)}','${s.entry.type}', '${s.entry.entryId}')" style="flex:1;">
+              <span style="font-weight:bold;">${s.p.photo?`<img src="${s.p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${s.p.name}</span>
+              <span style="font-size:11px; color:#0284c7; font-weight:bold; margin-left:4px;">[${s.entry.weekLabel || s.entry.weekStartDate}]</span>
+              <div style="font-size:10px; color:#64748b; margin-top:2px;">평균 시도 ${(s.entry.dailyAttempts ? avg(s.entry.playerScores) : 0)} / 성공 ${(s.entry.dailyAttempts ? avg(s.entry.coachScores) : 0)}</div>
+            </div>
+            ${isCoach ? `
+              <div style="display:flex; gap:4px; align-items:center; white-space:nowrap;">
+                <button class="btn btn-outline" style="width:auto; padding:2px 7px; font-size:10.5px; border-color:#cbd5e1; background:white;" onclick="event.stopPropagation(); openEditEntryModal('${s.entry.entryId}', '${esc(s.entry.weekLabel||'')}', '${s.entry.weekStartDate}', '${s.entry.type}', '${s.p.id}', '${esc(s.p.name)}')"><i class="fa fa-pen"></i> 수정</button>
+                <button class="btn btn-outline" style="width:auto; padding:2px 7px; font-size:10.5px; color:#d97706; border-color:#fcd34d; background:white;" onclick="event.stopPropagation(); openMoveEntryModal('${s.entry.entryId}', '${esc(s.entry.weekLabel||'')}', '${s.entry.weekStartDate}', '${s.entry.type}', '${s.p.id}', '${esc(s.p.name)}')"><i class="fa fa-arrow-right"></i> 이동</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
       <div style="flex:1; min-width:220px;"><h4 style="color:#ef4444;">⚠ 미제출 (${missing.length})</h4>
         ${missing.length ? missing.map(p=>`<div class="list-item" style="opacity:.55;"><span>${p.photo?`<img src="${p.photo}" style="width:20px;height:20px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">`:''}${p.name}</span></div>`).join('') : '<div style="font-size:11.5px; color:#94a3b8;">없음</div>'}</div>
     </div>`;
+}
+
+/* ---------- 🧩 주기화 일지 수정 / 이동 / 하나로 묶기 관리 함수들 ---------- */
+let currentEditEntryId = null;
+
+function openEditEntryModal(entryId, weekLabel, weekStartDate, type, playerId, playerName) {
+  currentEditEntryId = entryId;
+  const overlay = document.getElementById('editEntryModalOverlay');
+  if (!overlay) return;
+  document.getElementById('editEntryModalTitle').innerText = '주기화 일지 정보 수정 및 이동';
+  document.getElementById('editEntryPlayerName').innerText = playerName || '-';
+  document.getElementById('editEntryCurrentInfo').innerText = `${(JOURNAL_TYPES[type]||{}).title || type} · ${weekLabel || weekStartDate} (${weekStartDate})`;
+  document.getElementById('editEntryType').value = type || 'pass';
+  document.getElementById('editEntryDate').value = weekStartDate || '';
+  document.getElementById('editEntryLabel').value = weekLabel || '';
+
+  const qp = document.getElementById('editEntryQuickPick');
+  if (qp && byTypeCache && byTypeCache.entries) {
+    const map = {};
+    byTypeCache.entries.filter(e => e.type === (type || 'pass')).forEach(e => {
+      if (e.weekStartDate) map[e.weekStartDate] = e.weekLabel || e.weekStartDate;
+    });
+    qp.innerHTML = '<option value="">-- 기존 팀 바퀴 선택 시 날짜/이름 자동 입력 --</option>' + 
+      Object.keys(map).sort((a,b)=>new Date(b)-new Date(a)).map(d => `<option value="${d}|${map[d]}">${map[d]} (${d})</option>`).join('');
+  }
+  overlay.style.display = 'flex';
+}
+
+function openMoveEntryModal(entryId, weekLabel, weekStartDate, type, playerId, playerName) {
+  openEditEntryModal(entryId, weekLabel, weekStartDate, type, playerId, playerName);
+  document.getElementById('editEntryModalTitle').innerText = '주기화 일지 이동 (다른 바퀴 또는 다른 주기화로 이동)';
+}
+
+function closeEditEntryModal() {
+  const overlay = document.getElementById('editEntryModalOverlay');
+  if (overlay) overlay.style.display = 'none';
+  currentEditEntryId = null;
+}
+
+function onEditEntryQuickPick(val) {
+  if (!val) return;
+  const parts = val.split('|');
+  if (parts[0]) document.getElementById('editEntryDate').value = parts[0];
+  if (parts[1]) document.getElementById('editEntryLabel').value = parts[1];
+}
+
+async function submitEditEntryMeta() {
+  if (!currentEditEntryId) return;
+  const targetType = document.getElementById('editEntryType').value;
+  const targetDate = document.getElementById('editEntryDate').value;
+  const targetLabel = document.getElementById('editEntryLabel').value.trim() || '1바퀴';
+
+  if (!targetDate) {
+    await uiAlert('시작일을 입력해주세요.', '입력 확인');
+    return;
+  }
+
+  const res = await api({
+    action: 'updateEntryMeta',
+    entryId: currentEditEntryId,
+    weekLabel: targetLabel,
+    weekStartDate: targetDate,
+    type: targetType
+  });
+
+  if (res.ok) {
+    if (byTypeCache && byTypeCache.entries) {
+      const e = byTypeCache.entries.find(x => x.entryId === currentEditEntryId);
+      if (e) {
+        e.weekLabel = targetLabel;
+        e.weekStartDate = targetDate;
+        e.type = targetType;
+      }
+    }
+    if (currentEntry && currentEntry.entryId === currentEditEntryId) {
+      currentEntry.weekLabel = targetLabel;
+      currentEntry.weekStartDate = targetDate;
+      currentEntry.type = targetType;
+      renderJournal();
+    }
+    closeEditEntryModal();
+    uiToast('주기화 일지가 성공적으로 수정 및 이동되었습니다.');
+    refreshByTypeWeeks();
+    const curW = document.getElementById('byTypeWeek')?.value;
+    if (curW) renderByTypeResults(document.getElementById('byTypeType')?.value, curW);
+    if (currentPlayerId) loadArchive();
+  } else {
+    await uiAlert(res.error || '수정에 실패했습니다.', '오류');
+  }
+}
+
+async function quickUnifyWeekLabel(type, week, targetLabel) {
+  if (!targetLabel) targetLabel = '1바퀴';
+  if (!(await uiConfirm(`이 날짜(${week})에 작성된 모든 일지의 바퀴 이름을\n'${targetLabel}'(으)로 통일하시겠습니까?`, '이름 통일 확인'))) return;
+
+  const targetEntries = (byTypeCache && byTypeCache.entries) 
+    ? byTypeCache.entries.filter(e => e.type === type && e.weekStartDate === week)
+    : [];
+  if (targetEntries.length === 0) return uiToast('대상 일지가 없습니다.', 'info');
+
+  const entryIds = targetEntries.map(e => e.entryId);
+  const res = await api({
+    action: 'batchUpdateEntryMeta',
+    entryIds,
+    targetWeekLabel: targetLabel,
+    targetWeekStartDate: week,
+    targetType: type
+  });
+
+  if (res.ok) {
+    targetEntries.forEach(e => e.weekLabel = targetLabel);
+    if (currentEntry && entryIds.includes(currentEntry.entryId)) {
+      currentEntry.weekLabel = targetLabel;
+      renderJournal();
+    }
+    uiToast(`${entryIds.length}개 일지의 이름을 '${targetLabel}'(으)로 통일했습니다!`);
+    refreshByTypeWeeks();
+    renderByTypeResults(type, week);
+  } else {
+    await uiAlert(res.error || '통일에 실패했습니다.', '오류');
+  }
+}
+
+async function promptRenameWeekLabel(type, week) {
+  const targetEntries = (byTypeCache && byTypeCache.entries) 
+    ? byTypeCache.entries.filter(e => e.type === type && e.weekStartDate === week)
+    : [];
+  const curLabel = (targetEntries[0] && targetEntries[0].weekLabel) || '1바퀴';
+  const newName = await uiPrompt(`시작일 [${week}]의 모든 일지에 적용할 새 바퀴 이름을 입력하세요:`, curLabel, '바퀴 이름 일괄 변경');
+  if (!newName || !newName.trim()) return;
+
+  const entryIds = targetEntries.map(e => e.entryId);
+  const res = await api({
+    action: 'batchUpdateEntryMeta',
+    entryIds,
+    targetWeekLabel: newName.trim(),
+    targetWeekStartDate: week,
+    targetType: type
+  });
+
+  if (res.ok) {
+    targetEntries.forEach(e => e.weekLabel = newName.trim());
+    if (currentEntry && entryIds.includes(currentEntry.entryId)) {
+      currentEntry.weekLabel = newName.trim();
+      renderJournal();
+    }
+    uiToast(`바퀴 이름을 '${newName.trim()}'(으)로 변경했습니다!`);
+    refreshByTypeWeeks();
+    renderByTypeResults(type, week);
+  } else {
+    await uiAlert(res.error || '변경 실패', '오류');
+  }
+}
+
+/* ---------- 🧩 파편화된 주기화 일괄 정리 매니저 모달 제어 ---------- */
+let currentMergeManagerType = 'pass';
+let preselectedMergeDate = '';
+
+function openCycleMergeManager(initType, initWeek) {
+  currentMergeManagerType = initType || document.getElementById('byTypeType')?.value || 'pass';
+  preselectedMergeDate = initWeek || '';
+  const overlay = document.getElementById('cycleMergeModalOverlay');
+  if (overlay) overlay.style.display = 'flex';
+  switchMergeManagerType(currentMergeManagerType);
+}
+
+function closeCycleMergeManager() {
+  const overlay = document.getElementById('cycleMergeModalOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function switchMergeManagerType(type) {
+  currentMergeManagerType = type;
+  ['pass', 'touch', 'dribble'].forEach(t => {
+    const btn = document.getElementById('mergeTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) {
+      if (t === type) {
+        btn.style.background = 'white';
+        btn.style.color = '#0f172a';
+        btn.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+      } else {
+        btn.style.background = 'transparent';
+        btn.style.color = '#64748b';
+        btn.style.boxShadow = 'none';
+      }
+    }
+  });
+  renderCycleMergeModalBody();
+}
+
+function renderCycleMergeModalBody() {
+  const body = document.getElementById('cycleMergeModalBody');
+  if (!body) return;
+  if (!byTypeCache || !byTypeCache.entries) {
+    body.innerHTML = '<div style="padding:20px; text-align:center; color:#94a3b8;">데이터를 불러오는 중입니다...</div>';
+    return;
+  }
+
+  const entries = byTypeCache.entries.filter(e => e.type === currentMergeManagerType);
+  if (entries.length === 0) {
+    body.innerHTML = '<div style="padding:30px; text-align:center; color:#94a3b8;">등록된 일지가 없습니다.</div>';
+    return;
+  }
+
+  // Group by weekStartDate
+  const dateGroups = {};
+  entries.forEach(e => {
+    if (!dateGroups[e.weekStartDate]) dateGroups[e.weekStartDate] = [];
+    dateGroups[e.weekStartDate].push(e);
+  });
+
+  const sortedDates = Object.keys(dateGroups).sort((a,b) => new Date(b) - new Date(a));
+
+  let groupsHtml = sortedDates.map(date => {
+    const list = dateGroups[date];
+    const labelCounts = {};
+    list.forEach(e => {
+      const lbl = (e.weekLabel || '').trim() || date;
+      labelCounts[lbl] = (labelCounts[lbl] || 0) + 1;
+    });
+    const distinctLabels = Object.keys(labelCounts);
+    const isFrag = distinctLabels.length > 1;
+    const dominant = distinctLabels.sort((a,b) => labelCounts[b] - labelCounts[a])[0] || '1바퀴';
+    const isPreselected = preselectedMergeDate && preselectedMergeDate === date;
+
+    return `
+      <div style="background:#f8fafc; border:1px solid ${isFrag ? '#fed7aa' : '#cbd5e1'}; border-radius:10px; margin-bottom:12px; overflow:hidden;">
+        <!-- Group Header -->
+        <div style="background:${isFrag ? '#fff7ed' : '#e2e8f0'}; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" class="merge-group-checkbox" data-date="${date}" onchange="onToggleMergeGroupCheckbox(this, '${date}')" ${isPreselected ? 'checked' : ''} style="cursor:pointer; width:15px; height:15px;">
+            <span style="font-weight:900; font-size:13px; color:#0f172a;">${date}</span>
+            <span style="font-size:11px; background:white; border:1px solid #cbd5e1; padding:1px 6px; border-radius:10px; font-weight:bold; color:#475569;">${list.length}명</span>
+            ${isFrag ? `<span style="background:#fee2e2; color:#b91c1c; font-size:10.5px; font-weight:bold; padding:1px 6px; border-radius:4px;"><i class="fa fa-triangle-exclamation"></i> 이름 불일치 (${distinctLabels.length}개)</span>` : ''}
+          </div>
+          <div style="display:flex; gap:4px; align-items:center;">
+            <button class="btn btn-outline" style="width:auto; padding:2px 8px; font-size:10.5px; background:white;" onclick="quickUnifyWeekLabel('${currentMergeManagerType}', '${date}', '${esc(dominant)}')">
+              <i class="fa fa-pen"></i> '${esc(dominant)}' 통일
+            </button>
+          </div>
+        </div>
+
+        <!-- Entries in this date -->
+        <div style="padding:8px 12px; background:white;">
+          <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:6px;">
+            ${list.map(e => `
+              <label style="display:flex; align-items:center; gap:6px; padding:4px 6px; border:1px solid #f1f5f9; border-radius:6px; font-size:11.5px; cursor:pointer; background:#fafafa;">
+                <input type="checkbox" name="mergeEntryItem" value="${e.entryId}" data-date="${date}" ${isPreselected ? 'checked' : ''} onchange="updateSelectedMergeCount()" style="cursor:pointer;">
+                <span style="font-weight:bold; color:#0f172a;">${esc(e.playerName || e.playerId)}</span>
+                <span style="color:#0284c7; font-size:10.5px; margin-left:auto; font-weight:bold;">${esc(e.weekLabel || date)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Collect distinct dates and labels for quick pick
+  const quickOptions = sortedDates.map(d => {
+    const list = dateGroups[d];
+    const lbl = (list[0] && list[0].weekLabel) || d;
+    return `<option value="${d}|${lbl}">${lbl} (${d})</option>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div style="max-height:48vh; overflow-y:auto; padding-right:4px;">
+      ${groupsHtml}
+    </div>
+
+    <!-- Merge & Move Bottom Panel -->
+    <div style="background:#f1f5f9; border:1.5px solid #cbd5e1; border-radius:12px; padding:14px; margin-top:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="font-weight:900; font-size:13px; color:#0f172a;">
+          <i class="fa fa-object-group" style="color:#c2410c;"></i> 선택한 일지 하나로 묶기 / 이동
+        </span>
+        <span id="selectedMergeCountBadge" style="background:#0284c7; color:white; font-size:11px; font-weight:bold; padding:2px 8px; border-radius:12px;">
+          선택된 일지 0개
+        </span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-bottom:10px;">
+        <div>
+          <label style="font-size:11px; font-weight:bold; color:#475569; display:block; margin-bottom:2px;">통합할 주기화 유형</label>
+          <select id="mergeTargetType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; background:white;">
+            <option value="pass" ${currentMergeManagerType==='pass'?'selected':''}>⚽ 패스 주기화</option>
+            <option value="touch" ${currentMergeManagerType==='touch'?'selected':''}>🎯 터치 주기화</option>
+            <option value="dribble" ${currentMergeManagerType==='dribble'?'selected':''}>⚡ 드리블 주기화</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:bold; color:#475569; display:block; margin-bottom:2px;">통합할 시작일</label>
+          <input type="date" id="mergeTargetDate" value="${preselectedMergeDate || (sortedDates[0] || '')}" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:bold; color:#475569; display:block; margin-bottom:2px;">통합할 바퀴 이름</label>
+          <input type="text" id="mergeTargetLabel" placeholder="예: 1바퀴" value="1바퀴" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:12px; box-sizing:border-box;">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="font-size:10.5px; color:#64748b; display:block; margin-bottom:3px;">⚡ 기존 바퀴에서 선택하여 맞추기</label>
+        <select onchange="onMergeQuickPick(this.value)" style="width:100%; padding:5px 8px; border:1px dashed #94a3b8; border-radius:6px; font-size:11.5px; background:white; color:#334155;">
+          <option value="">-- 기존 팀 바퀴 목록에서 선택 --</option>
+          ${quickOptions}
+        </select>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <button class="btn btn-outline" style="width:auto; padding:6px 12px; font-size:11.5px;" onclick="toggleSelectAllMergeItems()">전체 선택 / 해제</button>
+        <button class="btn btn-red" style="width:auto; padding:7px 18px; font-size:12.5px; font-weight:900;" onclick="applyCycleMergeSubmit()">
+          <i class="fa fa-check"></i> 하나로 묶기 / 이동 적용
+        </button>
+      </div>
+    </div>
+  `;
+
+  updateSelectedMergeCount();
+}
+
+function onToggleMergeGroupCheckbox(el, date) {
+  const cbs = document.querySelectorAll(`input[name="mergeEntryItem"][data-date="${date}"]`);
+  cbs.forEach(cb => cb.checked = el.checked);
+  updateSelectedMergeCount();
+}
+
+function toggleSelectAllMergeItems() {
+  const cbs = document.querySelectorAll('input[name="mergeEntryItem"]');
+  const allChecked = Array.from(cbs).every(cb => cb.checked);
+  cbs.forEach(cb => cb.checked = !allChecked);
+  document.querySelectorAll('.merge-group-checkbox').forEach(cb => cb.checked = !allChecked);
+  updateSelectedMergeCount();
+}
+
+function updateSelectedMergeCount() {
+  const cbs = document.querySelectorAll('input[name="mergeEntryItem"]:checked');
+  const badge = document.getElementById('selectedMergeCountBadge');
+  if (badge) badge.innerText = `선택된 일지 ${cbs.length}개`;
+}
+
+function onMergeQuickPick(val) {
+  if (!val) return;
+  const parts = val.split('|');
+  if (parts[0]) document.getElementById('mergeTargetDate').value = parts[0];
+  if (parts[1]) document.getElementById('mergeTargetLabel').value = parts[1];
+}
+
+async function applyCycleMergeSubmit() {
+  const cbs = document.querySelectorAll('input[name="mergeEntryItem"]:checked');
+  if (cbs.length === 0) {
+    return uiAlert('하나로 묶거나 이동할 일지를 1개 이상 선택해주세요.', '선택 확인');
+  }
+
+  const entryIds = Array.from(cbs).map(cb => cb.value);
+  const targetType = document.getElementById('mergeTargetType').value;
+  const targetDate = document.getElementById('mergeTargetDate').value;
+  const targetLabel = document.getElementById('mergeTargetLabel').value.trim() || '1바퀴';
+
+  if (!targetDate) {
+    return uiAlert('통합할 시작일을 선택해주세요.', '입력 확인');
+  }
+
+  if (!(await uiConfirm(`선택한 ${entryIds.length}개의 일지를\n[${(JOURNAL_TYPES[targetType]||{}).title || targetType}] 시작일: ${targetDate}, 이름: '${targetLabel}'(으)로\n하나로 묶고 이동하시겠습니까?`, '하나로 묶기 적용'))) {
+    return;
+  }
+
+  const res = await api({
+    action: 'batchUpdateEntryMeta',
+    entryIds,
+    targetWeekLabel: targetLabel,
+    targetWeekStartDate: targetDate,
+    targetType: targetType
+  });
+
+  if (res.ok) {
+    if (byTypeCache && byTypeCache.entries) {
+      entryIds.forEach(id => {
+        const e = byTypeCache.entries.find(x => x.entryId === id);
+        if (e) {
+          e.weekLabel = targetLabel;
+          e.weekStartDate = targetDate;
+          e.type = targetType;
+        }
+      });
+    }
+    if (currentEntry && entryIds.includes(currentEntry.entryId)) {
+      currentEntry.weekLabel = targetLabel;
+      currentEntry.weekStartDate = targetDate;
+      currentEntry.type = targetType;
+      renderJournal();
+    }
+    closeCycleMergeManager();
+    uiToast(`${entryIds.length}개의 일지가 성공적으로 하나로 묶이고 이동되었습니다!`);
+    refreshByTypeWeeks();
+    const curW = document.getElementById('byTypeWeek');
+    if (curW) {
+      curW.value = targetDate;
+      renderByTypeResults(targetType, targetDate);
+    }
+    if (currentPlayerId) loadArchive();
+  } else {
+    await uiAlert(res.error || '통합 처리에 실패했습니다.', '오류');
+  }
+}
+
+/* ---------- ⚽ 경기 주제 및 경기 정보 수정 / 하나로 묶기 함수들 ---------- */
+async function openEditMatchTopicModal(currentTopic) {
+  const matches = (matchEvaluationsCache || []).filter(m => (m.periodTopic || '주기화 주제 미지정') === currentTopic);
+  const cleanName = currentTopic.includes(':') ? currentTopic.split(':')[1].trim() : currentTopic;
+  
+  const newName = await uiPrompt(`주기화 주제명 수정 및 하나로 묶기:\n이 주제(${cleanName})에 속한 모든 경기 평가(${matches.length}건)의 주제명을 새로 변경하거나 다른 주제와 통일합니다.`, cleanName, '주기화 주제명 수정');
+  if (!newName || !newName.trim()) return;
+
+  const targetPeriodTopic = newName.trim();
+  const matchIds = matches.map(m => m.id || m.matchId);
+
+  const res = await api({
+    action: 'batchUpdateMatchMeta',
+    matchIds,
+    targetPeriodTopic
+  });
+
+  if (res.ok) {
+    matches.forEach(m => m.periodTopic = targetPeriodTopic);
+    renderMatchListArea();
+    uiToast(`주기화 주제명이 '${targetPeriodTopic}'(으)로 수정 및 묶였습니다!`);
+  } else {
+    await uiAlert(res.error || '주제명 수정에 실패했습니다.', '오류');
+  }
+}
+
+let currentEditingMatchGroupIds = [];
+
+function openEditMatchGroupModal(matchIds, matchDate, opponent, currentTopic) {
+  currentEditingMatchGroupIds = Array.isArray(matchIds) ? matchIds : [matchIds];
+  document.getElementById('matchGroupDate').value = matchDate || '';
+  document.getElementById('matchGroupOpponent').value = opponent || '';
+
+  const topSel = document.getElementById('matchGroupTopic');
+  if (topSel && matchEvaluationsCache) {
+    const topics = [...new Set(matchEvaluationsCache.map(m => m.periodTopic).filter(Boolean))];
+    topSel.innerHTML = '<option value="">-- 변경하지 않음 (현재 유지) --</option>' +
+      topics.map(t => `<option value="${t}" ${t === currentTopic ? 'selected' : ''}>${t}</option>`).join('');
+  }
+  const overlay = document.getElementById('matchGroupEditModalOverlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function closeEditMatchGroupModal() {
+  const overlay = document.getElementById('matchGroupEditModalOverlay');
+  if (overlay) overlay.style.display = 'none';
+  currentEditingMatchGroupIds = [];
+}
+
+async function submitEditMatchGroup() {
+  if (!currentEditingMatchGroupIds || currentEditingMatchGroupIds.length === 0) return;
+  const targetMatchDate = document.getElementById('matchGroupDate').value;
+  const targetOpponent = document.getElementById('matchGroupOpponent').value.trim();
+  const targetPeriodTopic = document.getElementById('matchGroupTopic').value;
+
+  if (!targetMatchDate) {
+    return uiAlert('경기 일자를 입력해주세요.', '입력 확인');
+  }
+
+  const payload = {
+    action: 'batchUpdateMatchMeta',
+    matchIds: currentEditingMatchGroupIds,
+    targetMatchDate,
+    targetOpponent
+  };
+  if (targetPeriodTopic) payload.targetPeriodTopic = targetPeriodTopic;
+
+  const res = await api(payload);
+  if (res.ok) {
+    currentEditingMatchGroupIds.forEach(id => {
+      const m = (matchEvaluationsCache || []).find(x => (x.id === id || x.matchId === id));
+      if (m) {
+        m.matchDate = targetMatchDate;
+        m.opponent = targetOpponent;
+        if (targetPeriodTopic) m.periodTopic = targetPeriodTopic;
+      }
+    });
+    closeEditMatchGroupModal();
+    renderMatchListArea();
+    uiToast('경기 정보가 수정 및 하나로 묶였습니다!');
+  } else {
+    await uiAlert(res.error || '수정 실패', '오류');
+  }
 }
 
 /* ---------- 🌟 엑셀 백업 ---------- */
@@ -4311,6 +5058,15 @@ async function deleteBugReportAction(reportId) {
    - 배너 버전(id) 변경 시 기존 7일 안보기와 무관하게 새 공지 즉시 노출
    ========================================================================== */
 const UPDATES = [
+  {
+    id: 'v1.7.0',
+    date: '2026-09-28',
+    changes: [
+      '경기 평가 기록 목록에서 불필요한 "지도자 피드백 요망" 열 완전 제거 및 레이아웃 정리',
+      '파편화된 주기화 일지/바퀴 이름 지도자 수정, 1클릭 통일 및 "하나로 묶기 / 이동" 매니저 기능 제공',
+      '주기화 주제명 및 경기 정보(일자/상대팀명) 수정 및 동일 경기 하나로 합치기 기능 연동'
+    ]
+  },
   {
     id: 'v1.6.0',
     date: '2026-09-28',
