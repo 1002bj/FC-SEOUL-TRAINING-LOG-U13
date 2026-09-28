@@ -497,12 +497,17 @@ async function handleApiRequest(req, res) {
         return res.json({ ok: true, matches });
       }
 
-      // 18. 경기 평가 저장
+      // 18. 경기 평가 저장 (신규 등록 및 지도자/선수 수정 지원)
       case 'saveMatchEvaluation': {
         const match = payload.match;
         if (!match) return res.json({ ok: false, error: '저장할 경기 평가 데이터가 없습니다.' });
-        if (!match.matchId) {
+        const targetId = match.matchId || match.id;
+        if (targetId) {
+          match.matchId = targetId;
+          match.id = targetId;
+        } else {
           match.matchId = `match_${match.playerId}_${match.matchDate}_${Date.now()}`;
+          match.id = match.matchId;
         }
         match.updatedAt = new Date().toISOString();
         if (!match.createdAt) match.createdAt = new Date().toISOString();
