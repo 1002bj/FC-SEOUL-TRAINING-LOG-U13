@@ -151,6 +151,238 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 .diary-item img { width:42px; height:42px; object-fit:cover; border-radius:4px; }
 .diary-item:hover { background:#f8fafc; }
 
+/* 🌟 지도자 포토일지 데스크탑 좌우 2단 레이아웃 */
+.diary-coach-mode #diaryViewCard { max-width: 1160px; transition: max-width 0.25s ease; }
+.diary-coach-layout .diary-2col-layout {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.diary-coach-layout .diary-photo-box {
+  position: sticky;
+  top: 20px;
+}
+.diary-coach-layout .diary-info-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 포토일지 썸네일 이미지 및 호버/안내 스타일 */
+.diary-img-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0f172a;
+  border: 1px solid #cbd5e1;
+  cursor: zoom-in;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.diary-img-wrapper:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.15);
+}
+.diary-zoomable-img {
+  width: 100%;
+  max-height: 540px;
+  object-fit: contain;
+  display: block;
+  background: #020617;
+  transition: filter 0.2s ease;
+}
+.diary-img-wrapper:hover .diary-zoomable-img {
+  filter: brightness(0.95);
+}
+.diary-img-overlay {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  opacity: 0.9;
+  transition: all 0.2s ease;
+}
+.diary-img-wrapper:hover .diary-img-overlay {
+  opacity: 1;
+  transform: scale(1.05);
+  background: rgba(225, 29, 72, 0.9);
+}
+.diary-zoom-guide:hover {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+}
+
+/* 🌟 포토 일지 고화질 라이트박스 확대 모달 */
+.photo-zoom-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  animation: photoFadeIn 0.2s ease-out;
+  user-select: none;
+}
+@keyframes photoFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.photo-zoom-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  color: white;
+  z-index: 10;
+  gap: 12px;
+}
+.photo-zoom-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.photo-zoom-badge {
+  background: var(--red);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.photo-zoom-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.photo-zoom-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.photo-zoom-scale {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 0 6px;
+  min-width: 44px;
+  text-align: center;
+}
+.photo-zoom-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #f8fafc;
+  padding: 6px 12px;
+  height: 34px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.photo-zoom-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+.photo-zoom-btn.close-btn {
+  background: #ef4444;
+  border-color: #ef4444;
+  margin-left: 4px;
+}
+.photo-zoom-btn.close-btn:hover {
+  background: #dc2626;
+}
+.photo-zoom-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  padding: 10px;
+}
+.photo-zoom-viewport:active {
+  cursor: grabbing;
+}
+#photoZoomImg {
+  max-width: 92vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+  user-select: none;
+  pointer-events: auto;
+}
+.photo-zoom-hint {
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 🌟 모바일에서는 원래대로 1단으로 표시 (지도자 화면이어도 모바일은 1단 스택 유지) */
+@media (max-width: 860px) {
+  .diary-coach-mode #diaryViewCard {
+    max-width: 100% !important;
+    padding: 18px 14px !important;
+  }
+  .diary-coach-layout .diary-2col-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+  .diary-coach-layout .diary-photo-box {
+    position: static !important;
+  }
+  .photo-zoom-header {
+    padding: 10px 12px;
+  }
+  .photo-zoom-title {
+    font-size: 14px;
+  }
+  .photo-zoom-btn {
+    padding: 4px 8px;
+    height: 30px;
+    font-size: 11.5px;
+  }
+  .photo-zoom-scale, .photo-zoom-hint {
+    display: none;
+  }
+}
+
 /* ---------------- 현대적 논블로킹 로딩바 및 토스트 ---------------- */
 #growthModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:500; align-items:center; justify-content:center; }
 #growthModal .box { background:white; width:700px; max-width:95vw; border-radius:8px; border-top:8px solid var(--red); padding:20px; box-shadow:0 10px 40px rgba(0,0,0,0.3);}
@@ -486,6 +718,30 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
       <button class="btn btn-outline" id="uiModalBtnCancel" style="display:none; width:auto;">취소</button>
       <button class="btn btn-red" id="uiModalBtnOk" style="width:auto;">확인</button>
     </div>
+  </div>
+</div>
+
+<!-- 🔍 포토일지 고화질 사진 확대 모달 (라이트박스 뷰어) -->
+<div id="photoZoomModal" class="photo-zoom-modal" style="display:none;" onclick="handlePhotoZoomBackdrop(event)">
+  <div class="photo-zoom-header">
+    <div class="photo-zoom-title-wrap">
+      <span class="photo-zoom-badge"><i class="fa fa-camera"></i> 포토 일지</span>
+      <h3 id="photoZoomTitle" class="photo-zoom-title">포토 일지 확대 보기</h3>
+    </div>
+    <div class="photo-zoom-toolbar">
+      <button class="photo-zoom-btn" onclick="zoomPhotoStep(0.2)" title="확대 (+)"><i class="fa fa-search-plus"></i></button>
+      <span id="photoZoomScaleBadge" class="photo-zoom-scale">100%</span>
+      <button class="photo-zoom-btn" onclick="zoomPhotoStep(-0.2)" title="축소 (-)"><i class="fa fa-search-minus"></i></button>
+      <button class="photo-zoom-btn" onclick="resetPhotoZoom()" title="화면 맞춤 / 원래 크기"><i class="fa fa-compress"></i> 화면 맞춤</button>
+      <a id="photoZoomDownloadBtn" class="photo-zoom-btn" href="#" target="_blank" title="새 창에서 원본 보기"><i class="fa fa-external-link-alt"></i></a>
+      <button class="photo-zoom-btn close-btn" onclick="closePhotoZoomModal()" title="닫기 (ESC)"><i class="fa fa-times"></i> 닫기</button>
+    </div>
+  </div>
+  <div class="photo-zoom-viewport" id="photoZoomViewport" onwheel="handlePhotoZoomWheel(event)">
+    <img id="photoZoomImg" src="" alt="확대된 일지 사진" draggable="false" ondblclick="togglePhotoZoomDouble()">
+  </div>
+  <div class="photo-zoom-hint">
+    <span><i class="fa fa-info-circle"></i> 더블클릭 또는 마우스 휠로 확대/축소 · 드래그로 화면 이동 · ESC 또는 바깥 어두운 영역 클릭 시 닫기</span>
   </div>
 </div>
 
@@ -2280,8 +2536,168 @@ function renderCoachDiaryBody(){
 }
 
 function initDiaryView() {
-  hidePanels(); document.getElementById('diaryViewWrapper').style.display = 'block';
+  hidePanels();
+  const wrapper = document.getElementById('diaryViewWrapper');
+  if (wrapper) {
+    wrapper.style.display = 'block';
+    const isCoach = currentUser && currentUser.role !== 'player';
+    if (isCoach) wrapper.classList.add('diary-coach-mode');
+    else wrapper.classList.remove('diary-coach-mode');
+  }
   document.getElementById('diaryViewCard').innerHTML = `<div id="calDetail" class="diary-large-view" style="display:none; border-top:none; padding-top:0;"></div><div id="calDetailEmpty" style="text-align:center; color:#94a3b8; padding:40px;"><i class="fa fa-calendar-alt fa-3x" style="opacity:0.3; margin-bottom:14px;"></i><br>좌측 목록이나 달력에서<br>날짜를 선택하면 사진을 볼 수 있습니다.</div>`;
+  initPhotoZoomDrag();
+}
+
+/* ==========================================================================
+   🔍 포토 일지 고화질 사진 확대 뷰어 (Photo Zoom Modal Controller)
+   ========================================================================== */
+let photoZoomState = {
+  scale: 1,
+  panX: 0,
+  panY: 0,
+  isDragging: false,
+  startX: 0,
+  startY: 0,
+  hasMoved: false
+};
+
+function updatePhotoZoomTransform() {
+  const img = document.getElementById('photoZoomImg');
+  if (!img) return;
+  img.style.transform = `translate(${photoZoomState.panX}px, ${photoZoomState.panY}px) scale(${photoZoomState.scale})`;
+  const scaleBadge = document.getElementById('photoZoomScaleBadge');
+  if (scaleBadge) scaleBadge.innerText = `${Math.round(photoZoomState.scale * 100)}%`;
+}
+
+function openPhotoZoomModal(imgUrl, title) {
+  if (!imgUrl) return;
+  const modal = document.getElementById('photoZoomModal');
+  const img = document.getElementById('photoZoomImg');
+  const titleEl = document.getElementById('photoZoomTitle');
+  const dlBtn = document.getElementById('photoZoomDownloadBtn');
+  if (!modal || !img) return;
+
+  photoZoomState = { scale: 1, panX: 0, panY: 0, isDragging: false, startX: 0, startY: 0, hasMoved: false };
+  img.src = imgUrl;
+  if (titleEl) titleEl.innerText = title || '포토 일지 확대 보기';
+  if (dlBtn) dlBtn.href = imgUrl;
+
+  updatePhotoZoomTransform();
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closePhotoZoomModal() {
+  const modal = document.getElementById('photoZoomModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  photoZoomState.isDragging = false;
+}
+
+function zoomPhotoStep(delta) {
+  let next = Math.round((photoZoomState.scale + delta) * 10) / 10;
+  if (next < 0.6) next = 0.6;
+  if (next > 4.0) next = 4.0;
+  photoZoomState.scale = next;
+  if (photoZoomState.scale <= 1) {
+    photoZoomState.panX = 0;
+    photoZoomState.panY = 0;
+  }
+  updatePhotoZoomTransform();
+}
+
+function resetPhotoZoom() {
+  photoZoomState.scale = 1;
+  photoZoomState.panX = 0;
+  photoZoomState.panY = 0;
+  updatePhotoZoomTransform();
+}
+
+function togglePhotoZoomDouble() {
+  if (photoZoomState.scale > 1.2) {
+    resetPhotoZoom();
+  } else {
+    photoZoomState.scale = 2.0;
+    updatePhotoZoomTransform();
+  }
+}
+
+function handlePhotoZoomWheel(e) {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 0.2 : -0.2;
+  zoomPhotoStep(delta);
+}
+
+function handlePhotoZoomBackdrop(e) {
+  if (photoZoomState.hasMoved) {
+    photoZoomState.hasMoved = false;
+    return;
+  }
+  if (e.target.id === 'photoZoomModal' || e.target.id === 'photoZoomViewport') {
+    closePhotoZoomModal();
+  }
+}
+
+let photoZoomDragInitialized = false;
+function initPhotoZoomDrag() {
+  if (photoZoomDragInitialized) return;
+  const vp = document.getElementById('photoZoomViewport');
+  if (!vp) return;
+  photoZoomDragInitialized = true;
+
+  function onDragStart(clientX, clientY) {
+    photoZoomState.isDragging = true;
+    photoZoomState.hasMoved = false;
+    photoZoomState.startX = clientX - photoZoomState.panX;
+    photoZoomState.startY = clientY - photoZoomState.panY;
+  }
+
+  function onDragMove(clientX, clientY) {
+    if (!photoZoomState.isDragging) return;
+    const diffX = clientX - photoZoomState.startX;
+    const diffY = clientY - photoZoomState.startY;
+    if (Math.abs(diffX - photoZoomState.panX) > 4 || Math.abs(diffY - photoZoomState.panY) > 4) {
+      photoZoomState.hasMoved = true;
+    }
+    photoZoomState.panX = diffX;
+    photoZoomState.panY = diffY;
+    updatePhotoZoomTransform();
+  }
+
+  function onDragEnd() {
+    photoZoomState.isDragging = false;
+  }
+
+  vp.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    onDragStart(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (photoZoomState.isDragging) onDragMove(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', onDragEnd);
+
+  vp.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      onDragStart(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  window.addEventListener('touchmove', (e) => {
+    if (photoZoomState.isDragging && e.touches.length === 1) {
+      onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+    }
+  }, { passive: true });
+  window.addEventListener('touchend', onDragEnd);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('photoZoomModal');
+      if (modal && modal.style.display === 'flex') {
+        closePhotoZoomModal();
+      }
+    }
+  });
 }
 
 function changeCalMonth(dir) { calDate = new Date(calDate.getFullYear(), calDate.getMonth() + dir, 1); renderCalendar(); }
@@ -2318,7 +2734,7 @@ async function loadCycleForDiary(diaryId, dateString, playerId) {
     else dayName = ["일","월","화","수","목","금","토"][dayIndex];
     
     const types = ['pass', 'touch', 'dribble'];
-    let html = `<h4 style="margin: 20px 0 8px; font-size: 14px; border-bottom: 2px solid var(--red); display: inline-block;">📋 관련 훈련 기록 (${dayName})</h4><div style="display:flex; flex-direction:column; gap:8px;">`;
+    let html = `<h4 style="margin: 16px 0 8px; font-size: 14px; border-bottom: 2px solid var(--red); display: inline-block;">📋 관련 훈련 기록 (${dayName})</h4><div style="display:flex; flex-direction:column; gap:8px;">`;
     
     let foundAny = false;
     for (const t of types) {
@@ -2365,7 +2781,7 @@ async function loadCycleForDiary(diaryId, dateString, playerId) {
     el.innerHTML = html;
 }
 
-// 🌟 포토 일지 클릭 시 해당 날짜 1개만 완벽하게 렌더링되도록 수정 (중복 렌더링 방지)
+// 🌟 포토 일지 클릭 시 해당 날짜 1개만 완벽하게 렌더링되도록 수정 (지도자 화면 2단 레이아웃 + 모바일 1단 반응형 + 고화질 사진 확대 지원)
 function viewDiaryByDate(dateStr) {
   // 딱 1개(가장 최근에 올린 사진)만 보여주도록 slice 처리
   const entries = diaryListCache.filter(x => x.date === dateStr).slice(0, 1);
@@ -2373,31 +2789,119 @@ function viewDiaryByDate(dateStr) {
   if(entries.length === 0) { detail.style.display = 'none'; empty.style.display = 'block'; return; }
   
   empty.style.display = 'none'; detail.style.display = 'block';
-  
-  // 🌟 이전에 그려진 내용을 완전히 초기화하여 겹침/두개 뜸 현상 방지
   detail.innerHTML = ''; 
-  
-  detail.innerHTML = entries.map(d => `
-    <div style="margin-bottom: 40px; padding-bottom:20px; border-bottom:1px dashed #cbd5e1;">
-      <h3 style="margin:0 0 12px; font-size:22px; font-weight:900; color:var(--black); border-bottom:3px solid var(--red); display:inline-block; padding-bottom:6px;">${d.playerName || currentPlayerName} — ${d.date}</h3>
-      <img src="${getDriveImgUrl(d.photoUrl)}">
-      <div id="diaryMemoView_${d.diaryId}">
-        ${d.memo ? `<p style="font-size:14px; white-space:pre-wrap; background:#f8fafc; padding:16px; border-radius:8px; margin-top:12px; border:1px solid #e2e8f0; line-height:1.5; color:#334155;">${esc(d.memo)}</p>` : '<p style="color:#94a3b8; font-size:13px; margin-top:12px;">메모가 없습니다.</p>'}
-        <div id="diaryCycle_${d.diaryId}"><div style="text-align:center; padding:10px; font-size:12px; color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> 훈련 데이터를 불러오는 중...</div></div>
-        <div style="text-align:right; margin-top:12px;">
-          <button class="btn btn-outline" style="width:auto; padding:6px 12px; display:inline-block;" onclick="toggleEditDiary('${d.diaryId}', true)"><i class="fa fa-edit"></i> 메모 수정</button>
-          <button class="btn btn-outline" style="border-color:#ef4444; color:#ef4444; width:auto; padding:6px 12px; display:inline-block; margin-left:6px;" onclick="deleteDiary('${d.diaryId}')"><i class="fa fa-trash"></i> 삭제</button>
-        </div>
-      </div>
-      <div id="diaryMemoEditForm_${d.diaryId}" style="display:none; background:#f8fafc; padding:16px; border-radius:8px; margin-top:12px; border:1px solid #cbd5e1;">
-        <label style="font-size:11px; font-weight:bold; color:var(--red); display:block; margin-bottom:6px;">새 메모 내용</label>
-        <textarea id="diaryMemoInput_${d.diaryId}" style="width:100%; min-height:80px; padding:10px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; font-family:inherit;">${esc(d.memo || '')}</textarea>
-        <div style="text-align:right; margin-top:10px;">
-          <button class="btn btn-outline" style="width:auto; padding:6px 16px; display:inline-block;" onclick="toggleEditDiary('${d.diaryId}', false)">취소</button>
-          <button class="btn btn-red" style="width:auto; padding:6px 16px; display:inline-block; margin-left:6px;" onclick="submitEditDiary('${d.diaryId}', '${d.date}', '${d.photoUrl}')"><i class="fa fa-save"></i> 메모 저장</button>
-        </div>
-      </div>
-    </div>`).join('');
+
+  const isCoach = currentUser && currentUser.role !== 'player';
+  const wrapper = document.getElementById('diaryViewWrapper');
+  if (wrapper) {
+    if (isCoach) wrapper.classList.add('diary-coach-mode');
+    else wrapper.classList.remove('diary-coach-mode');
+  }
+
+  detail.innerHTML = entries.map(d => {
+    const imgSrc = getDriveImgUrl(d.photoUrl);
+    const pName = d.playerName || currentPlayerName || '선수';
+    const titleText = `${pName} — ${d.date}`;
+    const safeTitle = (titleText || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const safeImgSrc = (imgSrc || '').replace(/'/g, "\\'");
+
+    if (isCoach) {
+      // 🌟 지도자용 데스크탑 2단 레이아웃 (모바일에서는 미디어쿼리로 기존 1단으로 자동 전환)
+      return `
+        <div class="diary-entry-card diary-coach-layout" style="margin-bottom: 30px; padding-bottom: 20px;">
+          <!-- 상단 헤더: 선수명, 날짜 및 확대 안내 -->
+          <div class="diary-header-row" style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid var(--red); padding-bottom:8px; margin-bottom:18px; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; font-size:22px; font-weight:900; color:var(--black); line-height:1.2;">${pName} — ${d.date}</h3>
+            <span class="diary-zoom-guide" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')" style="font-size:13px; font-weight:700; color:#ef4444; cursor:pointer; display:inline-flex; align-items:center; gap:6px; background:#fef2f2; padding:5px 12px; border-radius:6px; border:1px solid #fecaca; transition:all 0.2s;" title="클릭 시 큰 화면으로 확대">
+              <i class="fa fa-search-plus"></i> ( 사진을 클릭하면 크게 확대됩니다 )
+            </span>
+          </div>
+
+          <!-- 좌우 2단 배치 컨테이너 -->
+          <div class="diary-2col-layout">
+            <!-- 좌측: 사진 영역 -->
+            <div class="diary-photo-box">
+              <div class="diary-img-wrapper" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')" title="사진을 클릭하면 크게 확대됩니다">
+                <img src="${imgSrc}" alt="${d.date} 포토 일지" class="diary-zoomable-img">
+                <div class="diary-img-overlay">
+                  <i class="fa fa-search-plus"></i> <span>클릭하여 확대</span>
+                </div>
+              </div>
+              <div class="diary-photo-caption" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')" style="text-align:center; margin-top:10px; font-size:12.5px; color:#ef4444; font-weight:700; cursor:pointer;" title="사진을 클릭하면 크게 확대됩니다">
+                <i class="fa fa-search-plus"></i> ( 사진을 클릭하면 크게 확대됩니다 )
+              </div>
+            </div>
+
+            <!-- 우측: 메모 및 관련 훈련 기록 영역 -->
+            <div class="diary-info-box">
+              <div id="diaryMemoView_${d.diaryId}">
+                <div style="font-size:13px; font-weight:800; color:#1e293b; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+                  <i class="fa fa-sticky-note" style="color:var(--gold);"></i> 훈련 메모
+                </div>
+                ${d.memo ? `<p style="font-size:14px; white-space:pre-wrap; background:#f8fafc; padding:16px; border-radius:8px; margin:0 0 10px; border:1px solid #e2e8f0; line-height:1.55; color:#334155; word-break:break-word;">${esc(d.memo)}</p>` : '<p style="color:#94a3b8; font-size:13px; margin:0 0 10px; background:#f8fafc; padding:14px; border-radius:8px; border:1px solid #e2e8f0;">메모가 없습니다.</p>'}
+                <div style="text-align:right; margin-bottom:14px;">
+                  <button class="btn btn-outline" style="width:auto; padding:6px 14px; display:inline-block; font-size:12px;" onclick="toggleEditDiary('${d.diaryId}', true)"><i class="fa fa-edit"></i> 메모 수정</button>
+                  <button class="btn btn-outline" style="border-color:#ef4444; color:#ef4444; width:auto; padding:6px 14px; display:inline-block; margin-left:6px; font-size:12px;" onclick="deleteDiary('${d.diaryId}')"><i class="fa fa-trash"></i> 삭제</button>
+                </div>
+
+                <div id="diaryCycle_${d.diaryId}">
+                  <div style="text-align:center; padding:12px; font-size:12px; color:#94a3b8; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">
+                    <i class="fa fa-spinner fa-spin"></i> 훈련 데이터를 불러오는 중...
+                  </div>
+                </div>
+              </div>
+
+              <div id="diaryMemoEditForm_${d.diaryId}" style="display:none; background:#f8fafc; padding:16px; border-radius:8px; margin-bottom:14px; border:1px solid #cbd5e1;">
+                <label style="font-size:11px; font-weight:bold; color:var(--red); display:block; margin-bottom:6px;">새 메모 내용</label>
+                <textarea id="diaryMemoInput_${d.diaryId}" style="width:100%; min-height:80px; padding:10px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; font-family:inherit;">${esc(d.memo || '')}</textarea>
+                <div style="text-align:right; margin-top:10px;">
+                  <button class="btn btn-outline" style="width:auto; padding:6px 16px; display:inline-block;" onclick="toggleEditDiary('${d.diaryId}', false)">취소</button>
+                  <button class="btn btn-red" style="width:auto; padding:6px 16px; display:inline-block; margin-left:6px;" onclick="submitEditDiary('${d.diaryId}', '${d.date}', '${safeImgSrc}')"><i class="fa fa-save"></i> 메모 저장</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      // 🌟 선수용 기존 1단 레이아웃 (사진 확대 기능 동일 지원)
+      return `
+        <div style="margin-bottom: 40px; padding-bottom:20px; border-bottom:1px dashed #cbd5e1;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:3px solid var(--red); padding-bottom:6px; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; font-size:22px; font-weight:900; color:var(--black);">${pName} — ${d.date}</h3>
+            <span class="diary-zoom-guide" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')" style="font-size:12.5px; font-weight:700; color:#ef4444; cursor:pointer; display:inline-flex; align-items:center; gap:5px;" title="클릭 시 큰 화면으로 확대">
+              <i class="fa fa-search-plus"></i> ( 사진을 클릭하면 크게 확대됩니다 )
+            </span>
+          </div>
+
+          <div class="diary-img-wrapper" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')" title="사진을 클릭하면 크게 확대됩니다">
+            <img src="${imgSrc}" alt="${d.date} 일지 사진" class="diary-zoomable-img">
+            <div class="diary-img-overlay">
+              <i class="fa fa-search-plus"></i> <span>클릭하여 확대</span>
+            </div>
+          </div>
+          <div style="text-align:center; margin-top:8px; font-size:12px; color:#ef4444; font-weight:700; cursor:pointer;" onclick="openPhotoZoomModal('${safeImgSrc}', '${safeTitle}')">
+            <i class="fa fa-search-plus"></i> ( 사진을 클릭하면 크게 확대됩니다 )
+          </div>
+
+          <div id="diaryMemoView_${d.diaryId}">
+            ${d.memo ? `<p style="font-size:14px; white-space:pre-wrap; background:#f8fafc; padding:16px; border-radius:8px; margin-top:12px; border:1px solid #e2e8f0; line-height:1.5; color:#334155;">${esc(d.memo)}</p>` : '<p style="color:#94a3b8; font-size:13px; margin-top:12px;">메모가 없습니다.</p>'}
+            <div id="diaryCycle_${d.diaryId}"><div style="text-align:center; padding:10px; font-size:12px; color:#94a3b8;"><i class="fa fa-spinner fa-spin"></i> 훈련 데이터를 불러오는 중...</div></div>
+            <div style="text-align:right; margin-top:12px;">
+              <button class="btn btn-outline" style="width:auto; padding:6px 12px; display:inline-block;" onclick="toggleEditDiary('${d.diaryId}', true)"><i class="fa fa-edit"></i> 메모 수정</button>
+              <button class="btn btn-outline" style="border-color:#ef4444; color:#ef4444; width:auto; padding:6px 12px; display:inline-block; margin-left:6px;" onclick="deleteDiary('${d.diaryId}')"><i class="fa fa-trash"></i> 삭제</button>
+            </div>
+          </div>
+          <div id="diaryMemoEditForm_${d.diaryId}" style="display:none; background:#f8fafc; padding:16px; border-radius:8px; margin-top:12px; border:1px solid #cbd5e1;">
+            <label style="font-size:11px; font-weight:bold; color:var(--red); display:block; margin-bottom:6px;">새 메모 내용</label>
+            <textarea id="diaryMemoInput_${d.diaryId}" style="width:100%; min-height:80px; padding:10px; border:1px solid #cbd5e1; border-radius:4px; font-size:13px; font-family:inherit;">${esc(d.memo || '')}</textarea>
+            <div style="text-align:right; margin-top:10px;">
+              <button class="btn btn-outline" style="width:auto; padding:6px 16px; display:inline-block;" onclick="toggleEditDiary('${d.diaryId}', false)">취소</button>
+              <button class="btn btn-red" style="width:auto; padding:6px 16px; display:inline-block; margin-left:6px;" onclick="submitEditDiary('${d.diaryId}', '${d.date}', '${safeImgSrc}')"><i class="fa fa-save"></i> 메모 저장</button>
+            </div>
+          </div>
+        </div>`;
+    }
+  }).join('');
     
   document.getElementById('diaryViewCard').scrollIntoView({behavior: 'smooth', block: 'start'});
   entries.forEach(d => loadCycleForDiary(d.diaryId, d.date, currentPlayerId));
@@ -5132,6 +5636,15 @@ async function deleteBugReportAction(reportId) {
    - 배너 버전(id) 변경 시 기존 7일 안보기와 무관하게 새 공지 즉시 노출
    ========================================================================== */
 const UPDATES = [
+  {
+    id: 'v1.7.2',
+    date: '2026-09-29',
+    changes: [
+      '지도자 포토 일지 좌우 2단 레이아웃 개편 (좌측: 일지 사진, 우측: 메모 및 관련 훈련 기록) 및 카드 너비 확장',
+      '모바일 기기에서는 기존 1단 수직 배치 레이아웃 그대로 유지하도록 반응형 최적화',
+      '포토 일지 고화질 사진 확대 기능 (라이트박스 뷰어, 마우스 휠 확대/축소, 드래그 이동, 전체 화면 보기) 추가'
+    ]
+  },
   {
     id: 'v1.7.1',
     date: '2026-09-29',
