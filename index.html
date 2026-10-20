@@ -927,7 +927,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { 
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  collection, getDocs, query, where 
+  collection, getDocs, query, where, limit
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -942,26 +942,680 @@ const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId || '(default)');
 const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhuZ71F27zWi9jB7dSd0803FVA1Wsw6685O9af7iriwL2b9lsSXvXkJQ/exec';
 
-const withTimeout = (promise, ms = 4000, errorMsg = 'DB 응답 시간 초과') => 
-  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), ms))]);
+// ============================================================================
+// 🛡️ Client-Side Firestore Quota Circuit Breaker + Timeout + localStorage Fallback
+// ============================================================================
+const CIRCUIT_STORAGE_KEY = 'tj_quota_circuit_v1';
+const CIRCUIT_COOLDOWN_MS = 60 * 1000; // 60s cooldown when quota is exceeded
+const CLIENT_FS_TIMEOUT_MS = 2600; // 2.6s strict timeout so UI never hangs
+
+function isQuotaOrTimeoutErr(err) {
+  if (!err) return false;
+  const code = String(err.code || '').toLowerCase();
+  const msg = String(err.message || err.error || err || '').toLowerCase();
+  return (
+    code.includes('resource-exhausted') ||
+    code.includes('unavailable') ||
+    code.includes('deadline-exceeded') ||
+    msg.includes('quota exceeded') ||
+    msg.includes('resource-exhausted') ||
+    msg.includes('firestore_circuit_open') ||
+    msg.includes('firestore_timeout') ||
+    msg.includes('시간 초과') ||
+    msg.includes('timeout') ||
+    msg.includes('aborted') ||
+    msg.includes('backoff')
+  );
+}
+
+window.isQuotaOrTimeoutErr = isQuotaOrTimeoutErr;
+
+window.fcQuotaBreaker = {
+  _state: (() => {
+    try {
+      const raw = sessionStorage.getItem(CIRCUIT_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : { isOpen: false, openedAt: 0, reason: '' };
+    } catch (e) {
+      return { isOpen: false, openedAt: 0, reason: '' };
+    }
+  })(),
+  isOpen() {
+    if (!this._state.isOpen) return false;
+    if (Date.now() - this._state.openedAt > CIRCUIT_COOLDOWN_MS) {
+      this.reset();
+      return false;
+    }
+    return true;
+  },
+  trip(err) {
+    const reason = String(err?.message || err?.code || err || 'resource-exhausted');
+    const wasOpen = this._state.isOpen;
+    this._state = { isOpen: true, openedAt: Date.now(), reason };
+    try {
+      sessionStorage.setItem(CIRCUIT_STORAGE_KEY, JSON.stringify(this._state));
+    } catch (e) {}
+    if (!wasOpen) {
+      console.warn('[QuotaCircuitBreaker] Tripped for 60s due to:', reason);
+    }
+  },
+  reset() {
+    this._state = { isOpen: false, openedAt: 0, reason: '' };
+    try {
+      sessionStorage.removeItem(CIRCUIT_STORAGE_KEY);
+    } catch (e) {}
+  }
+};
+
+function fsClientOp(promise, ms = CLIENT_FS_TIMEOUT_MS) {
+  if (window.fcQuotaBreaker.isOpen()) {
+    const err = new Error('FIRESTORE_CIRCUIT_OPEN: Quota exceeded fallback active');
+    err.code = 'resource-exhausted';
+    return Promise.reject(err);
+  }
+  return new Promise((resolve, reject) => {
+    const tid = setTimeout(() => {
+      const err = new Error('FIRESTORE_TIMEOUT: DB 응답 시간 초과');
+      err.code = 'resource-exhausted';
+      window.fcQuotaBreaker.trip(err);
+      reject(err);
+    }, ms);
+    promise.then(res => {
+      clearTimeout(tid);
+      resolve(res);
+    }).catch(err => {
+      clearTimeout(tid);
+      if (isQuotaOrTimeoutErr(err)) {
+        window.fcQuotaBreaker.trip(err);
+      }
+      reject(err);
+    });
+  });
+}
+
+// LocalStorage Fallback Store (tj_local_cache_*)
+const LS_KEYS = {
+  users: 'tj_cache_users_v1',
+  entries: 'tj_cache_entries_v1',
+  diaries: 'tj_cache_diaries_v1',
+  matches: 'tj_cache_matches_v1',
+  bugReports: 'tj_cache_bugreports_v1'
+};
+
+function safeReadLS(key, fallback = {}) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function safeWriteLS(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // If localStorage is full, strip bulky base64 photos from cached items and retry
+    try {
+      if (value && typeof value === 'object') {
+        const slim = {};
+        Object.keys(value).forEach(k => {
+          const item = { ...value[k] };
+          if (item.photo && item.photo.length > 2000) item.photo = '';
+          if (item.photoUrl && item.photoUrl.startsWith('data:') && item.photoUrl.length > 2000) item.photoUrl = '';
+          slim[k] = item;
+        });
+        localStorage.setItem(key, JSON.stringify(slim));
+      }
+    } catch (e2) {}
+  }
+}
+
+window.fcLocalStore = {
+  mem: {
+    users: safeReadLS(LS_KEYS.users, {}),
+    entries: safeReadLS(LS_KEYS.entries, {}),
+    diaries: safeReadLS(LS_KEYS.diaries, {}),
+    matches: safeReadLS(LS_KEYS.matches, {}),
+    bugReports: safeReadLS(LS_KEYS.bugReports, {}),
+    gasSeeded: false
+  },
+  save(col) {
+    if (LS_KEYS[col] && this.mem[col]) {
+      safeWriteLS(LS_KEYS[col], this.mem[col]);
+    }
+  },
+  syncFromResponse(payload, res) {
+    if (!res || !res.ok) return;
+    const action = payload?.action;
+    try {
+      if (Array.isArray(res.users)) {
+        res.users.forEach(u => {
+          if (u && u.id) {
+            this.mem.users[u.id] = { ...(this.mem.users[u.id] || {}), ...u };
+          }
+        });
+        this.save('users');
+      }
+      if (res.user && res.user.id) {
+        this.mem.users[res.user.id] = { ...(this.mem.users[res.user.id] || {}), ...res.user };
+        if (payload.pw) {
+          this.mem.users[res.user.id].pw = payload.pw;
+          this.mem.users[res.user.id].isSynced = true;
+        }
+        this.save('users');
+      }
+      if (Array.isArray(res.entries)) {
+        res.entries.forEach(e => {
+          if (e && e.entryId) this.mem.entries[e.entryId] = e;
+        });
+        this.save('entries');
+      }
+      if (res.entry && res.entry.entryId) {
+        this.mem.entries[res.entry.entryId] = res.entry;
+        this.save('entries');
+      }
+      if (action === 'saveEntry' && payload.entry) {
+        const eid = res.entryId || payload.entry.entryId;
+        if (eid) {
+          this.mem.entries[eid] = { ...payload.entry, entryId: eid };
+          this.save('entries');
+        }
+      }
+      if (Array.isArray(res.diaries)) {
+        res.diaries.forEach(d => {
+          if (d && d.diaryId) this.mem.diaries[d.diaryId] = d;
+        });
+        this.save('diaries');
+      }
+      if (Array.isArray(res.diary)) {
+        res.diary.forEach(d => {
+          if (d && d.diaryId) this.mem.diaries[d.diaryId] = d;
+        });
+        this.save('diaries');
+      }
+      if (Array.isArray(res.matches)) {
+        res.matches.forEach(m => {
+          const mid = m?.matchId || m?.id;
+          if (mid) this.mem.matches[mid] = { ...m, matchId: mid, id: mid };
+        });
+        this.save('matches');
+      }
+      if (Array.isArray(res.reports)) {
+        res.reports.forEach(r => {
+          if (r && r.id) this.mem.bugReports[r.id] = r;
+        });
+        this.save('bugReports');
+      }
+    } catch (e) {
+      console.warn('[fcLocalStore.syncFromResponse]', e);
+    }
+  },
+  async ensureSeededFromGAS() {
+    if (Object.keys(this.mem.users).length > 0 || this.mem.gasSeeded) return;
+    this.mem.gasSeeded = true;
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 4000);
+      const gasRes = await fetch(GAS_WEBAPP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' }),
+        signal: controller.signal
+      });
+      clearTimeout(tid);
+      const gasData = await gasRes.json();
+      if (gasData && gasData.ok) {
+        if (Array.isArray(gasData.users)) {
+          gasData.users.forEach(u => {
+            if (u && u.id) {
+              this.mem.users[String(u.id)] = {
+                id: String(u.id),
+                pw: u.pw || '',
+                name: u.name || String(u.id),
+                role: u.role || 'player',
+                photo: u.photo || '',
+                granted: u.granted !== false,
+                isAdmin: u.isAdmin === true,
+                isSynced: !!u.pw
+              };
+            }
+          });
+          this.save('users');
+        }
+        if (Array.isArray(gasData.entries)) {
+          gasData.entries.forEach(e => {
+            if (e) {
+              const eid = e.entryId || `entry_${e.playerId}_${e.type}_${e.weekStartDate}`;
+              e.entryId = eid;
+              this.mem.entries[eid] = e;
+            }
+          });
+          this.save('entries');
+        }
+      }
+    } catch (e) {}
+  },
+  async handle(payload) {
+    const action = payload?.action;
+    await this.ensureSeededFromGAS();
+
+    switch (action) {
+      case 'register': {
+        const { id, pw, name, role, photo } = payload;
+        if (!id || !pw || !name) return { ok: false, error: '모든 항목을 입력해주세요.' };
+        if (this.mem.users[id]) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
+        const isFirst = Object.keys(this.mem.users).length === 0;
+        const isAdmin = isFirst && role === 'coach';
+        const granted = isFirst || false;
+        this.mem.users[id] = {
+          id, pw, name, role: role || 'player', photo: photo || '', granted, isAdmin, isSynced: true, createdAt: new Date().toISOString()
+        };
+        this.save('users');
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'login': {
+        const { id, pw } = payload;
+        if (!id || !pw) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
+        let user = this.mem.users[id] || null;
+
+        // Also check saved tj_user in localStorage
+        if (!user) {
+          try {
+            const savedU = JSON.parse(localStorage.getItem('tj_user') || 'null');
+            if (savedU && savedU.id === id) user = savedU;
+          } catch (e) {}
+        }
+
+        let isValid = false;
+        if (user && user.pw && user.pw === pw) {
+          isValid = true;
+        }
+
+        if (!isValid) {
+          try {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 3500);
+            const gasRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'login', id, pw }),
+              signal: controller.signal
+            });
+            clearTimeout(tid);
+            const gasData = await gasRes.json();
+            if (gasData && gasData.ok) {
+              isValid = true;
+              const gu = gasData.user || {};
+              user = {
+                id,
+                name: user?.name || gu.name || id,
+                role: user?.role || gu.role || 'player',
+                photo: user?.photo || gu.photo || '',
+                granted: user ? user.granted : (gu.granted !== false),
+                isAdmin: user ? user.isAdmin : (gu.isAdmin === true),
+                pw,
+                isSynced: true
+              };
+              this.mem.users[id] = user;
+              this.save('users');
+            }
+          } catch (e) {}
+        }
+
+        if (!user) return { ok: false, error: '등록되지 않은 아이디입니다.' };
+        if (!isValid) return { ok: false, error: '비밀번호가 일치하지 않습니다.' };
+
+        return {
+          ok: true,
+          _fromCache: true,
+          user: {
+            id: user.id,
+            name: user.name,
+            role: user.role || 'player',
+            photo: user.photo || '',
+            granted: user.granted || false,
+            isAdmin: user.isAdmin || false
+          }
+        };
+      }
+
+      case 'findId': {
+        const { name } = payload;
+        if (!name) return { ok: false, error: '이름을 입력해주세요.' };
+        const ids = Object.values(this.mem.users).filter(u => u && u.name === name).map(u => u.id);
+        if (ids.length > 0) return { ok: true, ids, _fromCache: true };
+        try {
+          const gasRes = await fetch(GAS_WEBAPP_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'findId', name })
+          });
+          const gasData = await gasRes.json();
+          if (gasData && gasData.ok && Array.isArray(gasData.ids)) return { ok: true, ids: gasData.ids };
+        } catch (e) {}
+        return { ok: false, error: '해당 이름으로 가입된 아이디를 찾을 수 없습니다.' };
+      }
+
+      case 'resetPw': {
+        const { id, name, newPw } = payload;
+        if (!id || !name || !newPw) return { ok: false, error: '모든 항목을 입력해주세요.' };
+        const user = this.mem.users[id];
+        if (!user) return { ok: false, error: '아이디가 존재하지 않습니다.' };
+        if (user.name !== name) return { ok: false, error: '가입된 이름과 일치하지 않습니다.' };
+        user.pw = newPw;
+        user.isSynced = true;
+        this.save('users');
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'listUsers': {
+        const users = Object.values(this.mem.users).map(u => ({
+          id: u.id,
+          name: u.name,
+          role: u.role || 'player',
+          photo: u.photo || '',
+          granted: u.granted || false,
+          isAdmin: u.isAdmin || false
+        }));
+        return { ok: true, users, _fromCache: true };
+      }
+
+      case 'setRoleAndApprove': {
+        const { targetId, role } = payload;
+        if (this.mem.users[targetId]) {
+          this.mem.users[targetId].role = role;
+          this.mem.users[targetId].granted = true;
+          this.save('users');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'setPermission': {
+        const { targetId, granted } = payload;
+        if (this.mem.users[targetId]) {
+          this.mem.users[targetId].granted = granted;
+          this.save('users');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'updateUserPhoto': {
+        const { userId, photo } = payload;
+        if (!userId) return { ok: false, error: '사용자 ID가 필요합니다.' };
+        if (this.mem.users[userId]) {
+          this.mem.users[userId].photo = photo || '';
+          this.save('users');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'deleteUser': {
+        const { targetId, deleteEntries } = payload;
+        delete this.mem.users[targetId];
+        this.save('users');
+        if (deleteEntries) {
+          Object.keys(this.mem.entries).forEach(k => {
+            if (this.mem.entries[k]?.playerId === targetId) delete this.mem.entries[k];
+          });
+          Object.keys(this.mem.diaries).forEach(k => {
+            if (this.mem.diaries[k]?.playerId === targetId) delete this.mem.diaries[k];
+          });
+          Object.keys(this.mem.matches).forEach(k => {
+            if (this.mem.matches[k]?.playerId === targetId) delete this.mem.matches[k];
+          });
+          this.save('entries');
+          this.save('diaries');
+          this.save('matches');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'listEntries': {
+        const { playerId, type } = payload;
+        const entries = Object.values(this.mem.entries).filter(e => {
+          if (!e || e.playerId !== playerId) return false;
+          if (type && e.type !== type) return false;
+          return true;
+        });
+        return { ok: true, entries, _fromCache: true };
+      }
+
+      case 'getEntry': {
+        const { entryId } = payload;
+        const entry = this.mem.entries[entryId];
+        if (!entry) return { ok: false, error: '일지를 찾을 수 없습니다.' };
+        return { ok: true, entry, _fromCache: true };
+      }
+
+      case 'saveEntry': {
+        const entry = payload.entry;
+        if (!entry) return { ok: false, error: '저장할 일지 데이터가 없습니다.' };
+        if (!entry.entryId) {
+          entry.entryId = `entry_${entry.playerId}_${entry.type}_${entry.weekStartDate}_${Date.now()}`;
+        }
+        entry.updatedAt = new Date().toISOString();
+        this.mem.entries[entry.entryId] = entry;
+        this.save('entries');
+        return { ok: true, entryId: entry.entryId, _fromCache: true };
+      }
+
+      case 'deleteEntry': {
+        const { entryId } = payload;
+        delete this.mem.entries[entryId];
+        this.save('entries');
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'updateEntryMeta': {
+        const { entryId, weekLabel, weekStartDate, type } = payload;
+        if (!entryId) return { ok: false, error: 'entryId가 필요합니다.' };
+        if (this.mem.entries[entryId]) {
+          if (weekLabel !== undefined) this.mem.entries[entryId].weekLabel = weekLabel;
+          if (weekStartDate !== undefined) this.mem.entries[entryId].weekStartDate = weekStartDate;
+          if (type !== undefined) this.mem.entries[entryId].type = type;
+          this.mem.entries[entryId].updatedAt = new Date().toISOString();
+          this.save('entries');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'batchUpdateEntryMeta': {
+        const { entryIds, targetWeekLabel, targetWeekStartDate, targetType } = payload;
+        if (!Array.isArray(entryIds) || !entryIds.length) return { ok: false, error: '선택된 일지가 없습니다.' };
+        entryIds.forEach(id => {
+          if (this.mem.entries[id]) {
+            if (targetWeekLabel) this.mem.entries[id].weekLabel = targetWeekLabel;
+            if (targetWeekStartDate) this.mem.entries[id].weekStartDate = targetWeekStartDate;
+            if (targetType) this.mem.entries[id].type = targetType;
+            this.mem.entries[id].updatedAt = new Date().toISOString();
+          }
+        });
+        this.save('entries');
+        return { ok: true, count: entryIds.length, _fromCache: true };
+      }
+
+      case 'batchUpdateMatchMeta': {
+        const { matchIds, targetMatchDate, targetOpponent, targetPeriodTopic } = payload;
+        if (!Array.isArray(matchIds) || !matchIds.length) return { ok: false, error: '선택된 경기 평가가 없습니다.' };
+        matchIds.forEach(id => {
+          if (this.mem.matches[id]) {
+            if (targetMatchDate) this.mem.matches[id].matchDate = targetMatchDate;
+            if (targetOpponent !== undefined) this.mem.matches[id].opponent = targetOpponent;
+            if (targetPeriodTopic) this.mem.matches[id].periodTopic = targetPeriodTopic;
+            this.mem.matches[id].updatedAt = new Date().toISOString();
+          }
+        });
+        this.save('matches');
+        return { ok: true, count: matchIds.length, _fromCache: true };
+      }
+
+      case 'listDiary': {
+        const { playerId } = payload;
+        const diary = Object.values(this.mem.diaries).filter(d => d && d.playerId === playerId);
+        return { ok: true, diary, _fromCache: true };
+      }
+
+      case 'saveDiary': {
+        const { playerId, playerName, date, photoUrl, memo } = payload;
+        const cleanDate = typeof formatDateLocal === 'function' ? formatDateLocal(date) : date;
+        const diaryId = `diary_${playerId}_${cleanDate}_${Date.now()}`;
+        const diaryData = {
+          diaryId, playerId, playerName, date: cleanDate, photoUrl: photoUrl || '', memo: memo || '', createdAt: new Date().toISOString()
+        };
+        this.mem.diaries[diaryId] = diaryData;
+        this.save('diaries');
+        return { ok: true, diaryId, _fromCache: true };
+      }
+
+      case 'updateDiaryMemo': {
+        const { diaryId, memo } = payload;
+        if (this.mem.diaries[diaryId]) {
+          this.mem.diaries[diaryId].memo = memo;
+          this.save('diaries');
+        }
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'deleteDiary': {
+        const { diaryId } = payload;
+        delete this.mem.diaries[diaryId];
+        this.save('diaries');
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'listMatchEvaluations': {
+        const { playerId } = payload;
+        const matches = Object.values(this.mem.matches)
+          .filter(m => m && (!playerId || m.playerId === playerId))
+          .sort((a, b) => new Date(b.matchDate || b.createdAt || 0) - new Date(a.matchDate || a.createdAt || 0));
+        return { ok: true, matches, _fromCache: true };
+      }
+
+      case 'saveMatchEvaluation': {
+        const match = payload.match;
+        if (!match) return { ok: false, error: '저장할 경기 평가 데이터가 없습니다.' };
+        if (!match.matchId) {
+          match.matchId = match.id || `match_${match.playerId}_${match.matchDate}_${Date.now()}`;
+        }
+        match.id = match.matchId;
+        match.updatedAt = new Date().toISOString();
+        if (!match.createdAt) match.createdAt = new Date().toISOString();
+        this.mem.matches[match.matchId] = match;
+        this.save('matches');
+        return { ok: true, matchId: match.matchId, _fromCache: true };
+      }
+
+      case 'deleteMatchEvaluation': {
+        const { matchId } = payload;
+        delete this.mem.matches[matchId];
+        this.save('matches');
+        return { ok: true, _fromCache: true };
+      }
+
+      case 'getAllData': {
+        const users = Object.values(this.mem.users).map(u => ({
+          id: u.id, name: u.name, role: u.role || 'player', photo: u.photo || '', granted: u.granted || false, isAdmin: u.isAdmin || false
+        }));
+        const entries = Object.values(this.mem.entries);
+        const matches = Object.values(this.mem.matches).sort((a, b) => new Date(b.matchDate || b.createdAt || 0) - new Date(a.matchDate || a.createdAt || 0));
+        const diaries = Object.values(this.mem.diaries);
+        return { ok: true, users, entries, matches, diaries, _fromCache: true };
+      }
+
+      case 'uploadFile': {
+        const fileContent = payload.base64 || payload.fileData || payload.data;
+        if (!fileContent) return { ok: false, error: '파일 데이터가 없습니다.' };
+        return { ok: true, viewUrl: fileContent, directUrl: fileContent, fileUrl: fileContent, _fromCache: true };
+      }
+
+      case 'submitBugReport': {
+        const { userId, userName, userRole, content, screen, userAgent, systemLogs } = payload;
+        if (!content || !content.trim()) return { ok: false, error: '제보 내용을 입력해주세요.' };
+        const reportId = 'report_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+        const now = new Date();
+        const reportData = {
+          id: reportId,
+          userId: userId || 'anonymous',
+          userName: userName || '익명',
+          userRole: userRole || 'player',
+          content: content.trim(),
+          screen: screen || '',
+          userAgent: userAgent || '',
+          systemLogs: Array.isArray(systemLogs) ? systemLogs.slice(-50) : [],
+          createdAt: now.toISOString(),
+          createdAtFormatted: now.toLocaleString('ko-KR'),
+          status: 'pending',
+          adminReply: '',
+          adminReplyDate: ''
+        };
+        this.mem.bugReports[reportId] = reportData;
+        this.save('bugReports');
+        return { ok: true, report: reportData, _fromCache: true };
+      }
+
+      case 'listBugReports': {
+        const { requesterId, isAdmin } = payload;
+        const reports = Object.values(this.mem.bugReports)
+          .filter(r => r && (isAdmin || r.userId === requesterId))
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        return { ok: true, reports, _fromCache: true };
+      }
+
+      case 'replyBugReport': {
+        const { reportId, adminReply } = payload;
+        if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
+        const dateStr = (new Date()).toLocaleString('ko-KR');
+        if (this.mem.bugReports[reportId]) {
+          this.mem.bugReports[reportId].adminReply = adminReply || '';
+          this.mem.bugReports[reportId].adminReplyDate = adminReply ? dateStr : '';
+          this.mem.bugReports[reportId].status = adminReply ? 'replied' : 'pending';
+          this.save('bugReports');
+        }
+        return { ok: true, adminReply, adminReplyDate: dateStr, _fromCache: true };
+      }
+
+      case 'deleteBugReport': {
+        const { reportId } = payload;
+        if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
+        delete this.mem.bugReports[reportId];
+        this.save('bugReports');
+        return { ok: true, _fromCache: true };
+      }
+
+      default:
+        return { ok: false, error: '지원되지 않는 요청입니다: ' + action };
+    }
+  }
+};
 
 window.runClientApi = async function(payload) {
+  if (window.fcQuotaBreaker.isOpen()) {
+    return window.fcLocalStore.handle(payload);
+  }
+
   const action = payload.action;
   try {
+    let result;
     switch (action) {
       case 'register': {
         const { id, pw, name, role, photo } = payload;
         if (!id || !pw || !name) return { ok: false, error: '모든 항목을 입력해주세요.' };
         const userRef = doc(db, 'users', id);
-        const userSnap = await withTimeout(getDoc(userRef), 4000);
+        const userSnap = await fsClientOp(getDoc(userRef));
         if (userSnap.exists()) return { ok: false, error: '이미 사용 중인 아이디입니다.' };
-        const usersSnap = await withTimeout(getDocs(collection(db, 'users')), 4000);
+        const usersSnap = await fsClientOp(getDocs(query(collection(db, 'users'), limit(1))));
         const isFirst = usersSnap.empty;
         const isAdmin = isFirst && role === 'coach';
         const granted = isFirst || false;
-        await withTimeout(setDoc(userRef, {
+        const newUser = {
           id, pw, name, role: role || 'player', photo: photo || '', granted, isAdmin, isSynced: true, createdAt: new Date().toISOString()
-        }), 4000);
+        };
+        await fsClientOp(setDoc(userRef, newUser));
+        window.fcLocalStore.mem.users[id] = newUser;
+        window.fcLocalStore.save('users');
         return { ok: true };
       }
 
@@ -969,17 +1623,15 @@ window.runClientApi = async function(payload) {
         const { id, pw } = payload;
         if (!id || !pw) return { ok: false, error: '아이디와 비밀번호를 입력해주세요.' };
         const userRef = doc(db, 'users', id);
-        const userSnap = await withTimeout(getDoc(userRef), 4000);
+        const userSnap = await fsClientOp(getDoc(userRef));
         if (!userSnap.exists()) return { ok: false, error: '등록되지 않은 아이디입니다.' };
         const user = userSnap.data();
 
         let isValid = false;
-        // 1. 이미 정상 동기화/가입/재설정된 실제 비밀번호와 일치하는지 확인 (임시 1234 차단)
         if (user.isSynced && user.pw && user.pw === pw) {
           isValid = true;
         }
 
-        // 2. 일치하지 않을 경우 구글 스프레드시트(GAS) 원본 비밀번호 실시간 대조
         if (!isValid) {
           try {
             const controller = new AbortController();
@@ -994,7 +1646,9 @@ window.runClientApi = async function(payload) {
               const gasData = await gasRes.json();
               if (gasData && gasData.ok) {
                 isValid = true;
-                withTimeout(updateDoc(userRef, { pw: pw, isSynced: true }), 3000).catch(()=>{});
+                user.pw = pw;
+                user.isSynced = true;
+                fcLocalStore.upsertById('users', 'id', { ...user, id });
               }
             } finally {
               clearTimeout(tid);
@@ -1004,7 +1658,7 @@ window.runClientApi = async function(payload) {
 
         if (!isValid) return { ok: false, error: '비밀번호가 일치하지 않습니다.' };
 
-        return {
+        result = {
           ok: true,
           user: {
             id: user.id,
@@ -1015,13 +1669,15 @@ window.runClientApi = async function(payload) {
             isAdmin: user.isAdmin || false
           }
         };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'findId': {
         const { name } = payload;
         if (!name) return { ok: false, error: '이름을 입력해주세요.' };
         const q = query(collection(db, 'users'), where('name', '==', name));
-        const qSnap = await getDocs(q);
+        const qSnap = await fsClientOp(getDocs(q));
         if (qSnap.empty) {
           try {
             const gasRes = await fetch(GAS_WEBAPP_URL, {
@@ -1043,11 +1699,11 @@ window.runClientApi = async function(payload) {
         const { id, name, newPw } = payload;
         if (!id || !name || !newPw) return { ok: false, error: '모든 항목을 입력해주세요.' };
         const userRef = doc(db, 'users', id);
-        const userSnap = await getDoc(userRef);
+        const userSnap = await fsClientOp(getDoc(userRef));
         if (!userSnap.exists()) return { ok: false, error: '아이디가 존재하지 않습니다.' };
         const user = userSnap.data();
         if (user.name !== name) return { ok: false, error: '가입된 이름과 일치하지 않습니다.' };
-        await updateDoc(userRef, { pw: newPw, isSynced: true });
+        await fsClientOp(updateDoc(userRef, { pw: newPw, isSynced: true }));
         try {
           fetch(GAS_WEBAPP_URL, {
             method: 'POST',
@@ -1059,7 +1715,7 @@ window.runClientApi = async function(payload) {
       }
 
       case 'listUsers': {
-        const snap = await getDocs(collection(db, 'users'));
+        const snap = await fsClientOp(getDocs(collection(db, 'users')));
         const users = [];
         snap.forEach(d => {
           const u = d.data();
@@ -1072,44 +1728,50 @@ window.runClientApi = async function(payload) {
             isAdmin: u.isAdmin || false
           });
         });
-        return { ok: true, users };
+        result = { ok: true, users };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'setRoleAndApprove': {
         const { targetId, role } = payload;
-        await updateDoc(doc(db, 'users', targetId), { role, granted: true });
+        await fsClientOp(updateDoc(doc(db, 'users', targetId), { role, granted: true }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'setPermission': {
         const { targetId, granted } = payload;
-        await updateDoc(doc(db, 'users', targetId), { granted });
+        await fsClientOp(updateDoc(doc(db, 'users', targetId), { granted }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'updateUserPhoto': {
         const { userId, photo } = payload;
         if (!userId) return { ok: false, error: '사용자 ID가 필요합니다.' };
-        await updateDoc(doc(db, 'users', userId), { photo: photo || '' });
+        await fsClientOp(updateDoc(doc(db, 'users', userId), { photo: photo || '' }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'deleteUser': {
         const { targetId, deleteEntries } = payload;
-        await deleteDoc(doc(db, 'users', targetId));
+        await fsClientOp(deleteDoc(doc(db, 'users', targetId)));
         if (deleteEntries) {
           const eq = query(collection(db, 'entries'), where('playerId', '==', targetId));
-          const eSnap = await getDocs(eq);
-          await Promise.all(eSnap.docs.map(d => deleteDoc(d.ref)));
+          const eSnap = await fsClientOp(getDocs(eq));
+          await Promise.all(eSnap.docs.map(d => fsClientOp(deleteDoc(d.ref))));
 
           const dq = query(collection(db, 'diaries'), where('playerId', '==', targetId));
-          const dSnap = await getDocs(dq);
-          await Promise.all(dSnap.docs.map(d => deleteDoc(d.ref)));
+          const dSnap = await fsClientOp(getDocs(dq));
+          await Promise.all(dSnap.docs.map(d => fsClientOp(deleteDoc(d.ref))));
 
           const mq = query(collection(db, 'matchEvaluations'), where('playerId', '==', targetId));
-          const mSnap = await getDocs(mq);
-          await Promise.all(mSnap.docs.map(d => deleteDoc(d.ref)));
+          const mSnap = await fsClientOp(getDocs(mq));
+          await Promise.all(mSnap.docs.map(d => fsClientOp(deleteDoc(d.ref))));
         }
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
@@ -1121,18 +1783,22 @@ window.runClientApi = async function(payload) {
         } else {
           q = query(collection(db, 'entries'), where('playerId', '==', playerId));
         }
-        const snap = await getDocs(q);
+        const snap = await fsClientOp(getDocs(q));
         const entries = [];
         snap.forEach(d => entries.push(d.data()));
-        return { ok: true, entries };
+        result = { ok: true, entries };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'getEntry': {
         const { entryId } = payload;
         const ref = doc(db, 'entries', entryId);
-        const snap = await getDoc(ref);
+        const snap = await fsClientOp(getDoc(ref));
         if (!snap.exists()) return { ok: false, error: '일지를 찾을 수 없습니다.' };
-        return { ok: true, entry: snap.data() };
+        result = { ok: true, entry: snap.data() };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'saveEntry': {
@@ -1142,27 +1808,32 @@ window.runClientApi = async function(payload) {
           entry.entryId = `entry_${entry.playerId}_${entry.type}_${entry.weekStartDate}_${Date.now()}`;
         }
         entry.updatedAt = new Date().toISOString();
-        await setDoc(doc(db, 'entries', entry.entryId), entry);
-        return { ok: true, entryId: entry.entryId };
+        await fsClientOp(setDoc(doc(db, 'entries', entry.entryId), entry));
+        result = { ok: true, entryId: entry.entryId };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'deleteEntry': {
         const { entryId } = payload;
-        await deleteDoc(doc(db, 'entries', entryId));
+        await fsClientOp(deleteDoc(doc(db, 'entries', entryId)));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'listDiary': {
         const { playerId } = payload;
         const q = query(collection(db, 'diaries'), where('playerId', '==', playerId));
-        const snap = await getDocs(q);
+        const snap = await fsClientOp(getDocs(q));
         const diary = [];
         snap.forEach(d => {
           const item = d.data();
           if (item.date) item.date = formatDateLocal(item.date);
           diary.push(item);
         });
-        return { ok: true, diary };
+        result = { ok: true, diary };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'saveDiary': {
@@ -1178,30 +1849,36 @@ window.runClientApi = async function(payload) {
           memo: memo || '',
           createdAt: new Date().toISOString()
         };
-        await setDoc(doc(db, 'diaries', diaryId), diaryData);
+        await fsClientOp(setDoc(doc(db, 'diaries', diaryId), diaryData));
+        window.fcLocalStore.mem.diaries[diaryId] = diaryData;
+        window.fcLocalStore.save('diaries');
         return { ok: true, diaryId };
       }
 
       case 'updateDiaryMemo': {
         const { diaryId, memo } = payload;
-        await updateDoc(doc(db, 'diaries', diaryId), { memo });
+        await fsClientOp(updateDoc(doc(db, 'diaries', diaryId), { memo }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'deleteDiary': {
         const { diaryId } = payload;
-        await deleteDoc(doc(db, 'diaries', diaryId));
+        await fsClientOp(deleteDoc(doc(db, 'diaries', diaryId)));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'listMatchEvaluations': {
         const { playerId } = payload;
         let q = playerId ? query(collection(db, 'matchEvaluations'), where('playerId', '==', playerId)) : collection(db, 'matchEvaluations');
-        const snap = await getDocs(q);
+        const snap = await fsClientOp(getDocs(q));
         const matches = [];
         snap.forEach(d => matches.push(d.data()));
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
-        return { ok: true, matches };
+        result = { ok: true, matches };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'saveMatchEvaluation': {
@@ -1210,25 +1887,32 @@ window.runClientApi = async function(payload) {
         if (!match.matchId) {
           match.matchId = `match_${match.playerId}_${match.matchDate}_${Date.now()}`;
         }
+        match.id = match.matchId;
         match.updatedAt = new Date().toISOString();
         if (!match.createdAt) match.createdAt = new Date().toISOString();
-        await setDoc(doc(db, 'matchEvaluations', match.matchId), match, { merge: true });
+        await fsClientOp(setDoc(doc(db, 'matchEvaluations', match.matchId), match, { merge: true }));
+        window.fcLocalStore.mem.matches[match.matchId] = match;
+        window.fcLocalStore.save('matches');
         return { ok: true, matchId: match.matchId };
       }
 
       case 'deleteMatchEvaluation': {
         const { matchId } = payload;
-        await deleteDoc(doc(db, 'matchEvaluations', matchId));
+        await fsClientOp(deleteDoc(doc(db, 'matchEvaluations', matchId)));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
       case 'getAllData': {
-        const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'entries')),
-          getDocs(collection(db, 'matchEvaluations')),
-          getDocs(collection(db, 'diaries'))
-        ]);
+        const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await fsClientOp(
+          Promise.all([
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'entries')),
+            getDocs(collection(db, 'matchEvaluations')),
+            getDocs(collection(db, 'diaries'))
+          ]),
+          3200
+        );
         const users = [];
         usersSnap.forEach(d => {
           const u = d.data();
@@ -1255,7 +1939,9 @@ window.runClientApi = async function(payload) {
           if (item.date) item.date = formatDateLocal(item.date);
           diaries.push(item);
         });
-        return { ok: true, users, entries, matches, diaries };
+        result = { ok: true, users, entries, matches, diaries };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'uploadFile': {
@@ -1264,9 +1950,9 @@ window.runClientApi = async function(payload) {
         const mtype = payload.mimeType || payload.fileType || 'application/octet-stream';
         if (!fileContent) return { ok: false, error: '파일 데이터가 없습니다.' };
         const fileId = `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-        await setDoc(doc(db, 'files', fileId), {
+        await fsClientOp(setDoc(doc(db, 'files', fileId), {
           fileId, filename: fname, mimeType: mtype, data: fileContent, createdAt: new Date().toISOString()
-        });
+        }));
         return { ok: true, viewUrl: fileContent, directUrl: fileContent, fileUrl: fileContent };
       }
 
@@ -1298,13 +1984,15 @@ window.runClientApi = async function(payload) {
           adminReply: '',
           adminReplyDate: ''
         };
-        await setDoc(doc(db, 'bugReports', reportId), reportData);
+        await fsClientOp(setDoc(doc(db, 'bugReports', reportId), reportData));
+        window.fcLocalStore.mem.bugReports[reportId] = reportData;
+        window.fcLocalStore.save('bugReports');
         return { ok: true, report: reportData };
       }
 
       case 'listBugReports': {
         const { requesterId, isAdmin } = payload;
-        const reportsSnap = await getDocs(collection(db, 'bugReports'));
+        const reportsSnap = await fsClientOp(getDocs(collection(db, 'bugReports')));
         const reports = [];
         reportsSnap.forEach(d => {
           const r = d.data();
@@ -1313,7 +2001,9 @@ window.runClientApi = async function(payload) {
           }
         });
         reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        return { ok: true, reports };
+        result = { ok: true, reports };
+        window.fcLocalStore.syncFromResponse(payload, result);
+        return result;
       }
 
       case 'replyBugReport': {
@@ -1329,11 +2019,12 @@ window.runClientApi = async function(payload) {
           second: 'numeric',
           hour12: true
         });
-        await updateDoc(doc(db, 'bugReports', reportId), {
+        await fsClientOp(updateDoc(doc(db, 'bugReports', reportId), {
           adminReply: adminReply || '',
           adminReplyDate: adminReply ? dateStr : '',
           status: adminReply ? 'replied' : 'pending'
-        });
+        }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true, adminReply, adminReplyDate: dateStr };
       }
 
@@ -1345,7 +2036,8 @@ window.runClientApi = async function(payload) {
         if (weekLabel !== undefined) updates.weekLabel = weekLabel;
         if (weekStartDate !== undefined) updates.weekStartDate = weekStartDate;
         if (type !== undefined) updates.type = type;
-        await setDoc(ref, updates, { merge: true });
+        await fsClientOp(setDoc(ref, updates, { merge: true }));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
@@ -1358,8 +2050,9 @@ window.runClientApi = async function(payload) {
         if (targetWeekLabel) updates.weekLabel = targetWeekLabel;
         if (targetWeekStartDate) updates.weekStartDate = targetWeekStartDate;
         if (targetType) updates.type = targetType;
-        const promises = entryIds.map(id => setDoc(doc(db, 'entries', id), updates, { merge: true }));
+        const promises = entryIds.map(id => fsClientOp(setDoc(doc(db, 'entries', id), updates, { merge: true })));
         await Promise.all(promises);
+        await window.fcLocalStore.handle(payload);
         return { ok: true, count: entryIds.length };
       }
 
@@ -1372,15 +2065,17 @@ window.runClientApi = async function(payload) {
         if (targetMatchDate) updates.matchDate = targetMatchDate;
         if (targetOpponent !== undefined) updates.opponent = targetOpponent;
         if (targetPeriodTopic) updates.periodTopic = targetPeriodTopic;
-        const promises = matchIds.map(id => setDoc(doc(db, 'matchEvaluations', id), updates, { merge: true }));
+        const promises = matchIds.map(id => fsClientOp(setDoc(doc(db, 'matchEvaluations', id), updates, { merge: true })));
         await Promise.all(promises);
+        await window.fcLocalStore.handle(payload);
         return { ok: true, count: matchIds.length };
       }
 
       case 'deleteBugReport': {
         const { reportId } = payload;
         if (!reportId) return { ok: false, error: '제보 ID가 필요합니다.' };
-        await deleteDoc(doc(db, 'bugReports', reportId));
+        await fsClientOp(deleteDoc(doc(db, 'bugReports', reportId)));
+        await window.fcLocalStore.handle(payload);
         return { ok: true };
       }
 
@@ -1388,7 +2083,14 @@ window.runClientApi = async function(payload) {
         return { ok: false, error: '지원되지 않는 요청입니다: ' + action };
     }
   } catch (err) {
-    console.error('[Direct Firestore Error]', err);
+    console.warn('[Direct Firestore Notice - Using Local Cache Fallback]:', err.message || err);
+    if (isQuotaOrTimeoutErr(err)) {
+      window.fcQuotaBreaker.trip(err);
+      return window.fcLocalStore.handle(payload);
+    }
+    // Even for other unexpected network/Firestore errors, fallback to localStorage cache if possible
+    const fallbackRes = await window.fcLocalStore.handle(payload);
+    if (fallbackRes && fallbackRes.ok) return fallbackRes;
     return { ok: false, error: err.message || '데이터베이스 처리 중 오류가 발생했습니다.' };
   }
 };
@@ -1505,6 +2207,8 @@ let currentPlayerId = null, currentPlayerName = null, sidebarMode = "cycle";
 let regPhotoData = "", pendingDiaryPhoto = null;
 let playersInfo = {}, diaryListCache = [], byTypeCache = null;
 let autoSaveTimer = null;
+let isEntryDirty = false;
+let lastSavedEntrySnapshot = '';
 let playerChart, coachChart, growthChart, analyticsRadarChart, analyticsLineChart;
 let reportData = null; 
 let analyticsMode = 'player'; 
@@ -1709,122 +2413,262 @@ function backendUrl(){
   return activeBackendTier === 'cloud' ? `${CLOUD_BACKEND_URL}?_t=${Date.now()}` : `/api?_t=${Date.now()}`;
 }
 
+const READ_ONLY_ACTIONS = new Set([
+  'getAllData', 'listUsers', 'listEntries', 'getEntry',
+  'listDiary', 'listMatchEvaluations', 'listBugReports', 'findId'
+]);
+const WRITE_ACTIONS = new Set([
+  'register', 'resetPw', 'setRoleAndApprove', 'setPermission', 'updateUserPhoto',
+  'deleteUser', 'saveEntry', 'deleteEntry', 'updateEntryMeta', 'batchUpdateEntryMeta',
+  'saveDiary', 'updateDiaryMemo', 'deleteDiary', 'saveMatchEvaluation',
+  'deleteMatchEvaluation', 'batchUpdateMatchMeta', 'uploadFile',
+  'submitBugReport', 'replyBugReport', 'deleteBugReport', 'migrateFromSheet'
+]);
+const inFlightReadRequests = new Map();
+const clientReadCache = new Map();
+const CLIENT_READ_TTL_MS = 15000; // 15초 내 동일 조회 요청 중복 호출 방지
+
+function getEntrySnapshotStr(entry) {
+  if (!entry) return '';
+  try {
+    return JSON.stringify({
+      type: entry.type,
+      weekStartDate: entry.weekStartDate,
+      weekLabel: entry.weekLabel,
+      goals: entry.goals,
+      dailyAttempts: entry.dailyAttempts,
+      dailySuccesses: entry.dailySuccesses,
+      dayStatus: entry.dayStatus,
+      playerScores: entry.playerScores,
+      coachScores: entry.coachScores,
+      playerQuestions: entry.playerQuestions,
+      videos: entry.videos,
+      playerComment: entry.playerComment,
+      coachFeedback: entry.coachFeedback
+    });
+  } catch (e) {
+    return '';
+  }
+}
+
+function markEntryClean(entry) {
+  isEntryDirty = false;
+  lastSavedEntrySnapshot = getEntrySnapshotStr(entry || currentEntry);
+}
+
+function markEntryDirtyIfChanged() {
+  if (!currentEntry) return false;
+  const curSnap = getEntrySnapshotStr(currentEntry);
+  if (curSnap !== lastSavedEntrySnapshot) {
+    isEntryDirty = true;
+    return true;
+  }
+  return false;
+}
+
 async function api(payload, silent){
-  if (!silent) loading(true);
+  const action = payload && payload.action ? payload.action : '';
+  const isRead = READ_ONLY_ACTIONS.has(action);
+  const isWrite = WRITE_ACTIONS.has(action);
+  const reqKey = isRead ? JSON.stringify(payload) : '';
 
-  // Helper for fast fetch with strict timeout
-  async function requestEndpoint(baseUrl, timeoutMs = 3500) {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
+  // 쓰기 요청 시 클라이언트 메모리 캐시 즉시 무효화
+  if (isWrite) {
+    clientReadCache.clear();
+  }
 
-      if (res.status === 405 || res.status === 404) {
-        throw new Error(`STATUS_${res.status}`);
+  // 단발성 조회 시 15초 이내 동일 요청 캐시 반환 (불필요한 중복 getDocs/getDoc 방지)
+  if (isRead && reqKey && clientReadCache.has(reqKey)) {
+    const cached = clientReadCache.get(reqKey);
+    if (Date.now() - cached.ts < CLIENT_READ_TTL_MS) {
+      return JSON.parse(JSON.stringify(cached.data));
+    }
+    clientReadCache.delete(reqKey);
+  }
+
+  // 동시에 발생한 동일 조회 요청은 1개의 네트워크/DB 호출로 병합 (In-flight Deduplication)
+  if (isRead && reqKey && inFlightReadRequests.has(reqKey)) {
+    return inFlightReadRequests.get(reqKey);
+  }
+
+  const execPromise = (async () => {
+    if (!silent) loading(true);
+
+    function finalizeSuccess(data) {
+      if (!silent) loading(false);
+      postProcessData(data);
+      if (window.fcLocalStore && data && data.ok) {
+        window.fcLocalStore.syncFromResponse(action, payload, data);
       }
-
-      const text = await res.text();
-      if (text.includes('405 Not Allowed') || text.includes('nginx')) {
-        throw new Error('STATUS_405');
+      if (isRead && reqKey && data && data.ok) {
+        clientReadCache.set(reqKey, { ts: Date.now(), data: JSON.parse(JSON.stringify(data)) });
       }
+      if (action === 'getAllData' && data && data.ok) {
+        byTypeCache = data;
+      }
+      return data;
+    }
 
-      let data;
+    function fallbackToLocal(reason) {
+      if (window.fcQuotaBreaker && window.isQuotaExceeded && window.isQuotaExceeded(reason)) {
+        window.fcQuotaBreaker.trip(reason);
+      }
+      if (window.fcLocalStore) {
+        const fb = window.fcLocalStore.executeFallback(payload);
+        if (fb && fb.ok) {
+          if (!silent) loading(false);
+          postProcessData(fb);
+          return fb;
+        }
+      }
+      return null;
+    }
+
+    // Helper for fast fetch with strict timeout
+    async function requestEndpoint(baseUrl, timeoutMs = 3500) {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        data = JSON.parse(text);
-      } catch (e) {
-        throw new Error('INVALID_JSON');
+        const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (res.status === 405 || res.status === 404) {
+          throw new Error(`STATUS_${res.status}`);
+        }
+
+        const text = await res.text();
+        if (text.includes('405 Not Allowed') || text.includes('nginx')) {
+          throw new Error('STATUS_405');
+        }
+
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error('INVALID_JSON');
+        }
+        return data;
+      } finally {
+        clearTimeout(tid);
       }
-      return data;
-    } finally {
-      clearTimeout(tid);
     }
-  }
 
-  // Tier 1: Check if already established on Cloud Backend
-  if (activeBackendTier === 'cloud') {
-    try {
-      const data = await requestEndpoint(CLOUD_BACKEND_URL, 6000);
-      if (!silent) loading(false);
-      postProcessData(data);
-      return data;
-    } catch (e) {
-      console.warn('[API] Cloud endpoint error, checking alternatives:', e.message);
+    // Tier 1: Check if already established on Cloud Backend
+    if (activeBackendTier === 'cloud') {
+      try {
+        const data = await requestEndpoint(CLOUD_BACKEND_URL, 4500);
+        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
+          const fb = fallbackToLocal(data.error);
+          if (fb) return fb;
+        }
+        return finalizeSuccess(data);
+      } catch (e) {
+        console.warn('[API] Cloud endpoint error, checking alternatives:', e.message);
+      }
     }
-  }
 
-  // Tier 2: Check current origin /api if not on a known static host
-  const isStaticHost = window.location.hostname.includes('github.io') || 
-                       window.location.protocol === 'file:' || 
-                       window.location.hostname.endsWith('.pages.dev') ||
-                       window.location.hostname.endsWith('.netlify.app') ||
-                       window.location.hostname.endsWith('.web.app');
+    // Tier 2: Check current origin /api if not on a known static host
+    const isStaticHost = window.location.hostname.includes('github.io') || 
+                         window.location.protocol === 'file:' || 
+                         window.location.hostname.endsWith('.pages.dev') ||
+                         window.location.hostname.endsWith('.netlify.app') ||
+                         window.location.hostname.endsWith('.web.app');
 
-  if (!isStaticHost && activeBackendTier !== 'direct') {
-    try {
-      const data = await requestEndpoint('/api', 2500);
-      activeBackendTier = 'local';
-      if (!silent) loading(false);
-      postProcessData(data);
-      return data;
-    } catch (err) {
-      console.warn('[API] Local /api bypassed:', err.message);
+    if (!isStaticHost && activeBackendTier !== 'direct') {
+      try {
+        const data = await requestEndpoint('/api', 3000);
+        activeBackendTier = 'local';
+        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
+          const fb = fallbackToLocal(data.error);
+          if (fb) return fb;
+        }
+        return finalizeSuccess(data);
+      } catch (err) {
+        console.warn('[API] Local /api bypassed:', err.message);
+      }
     }
-  }
 
-  // Tier 3: Call Cloud Backend URL (always works with full CORS support)
-  if (activeBackendTier !== 'direct') {
-    try {
-      const data = await requestEndpoint(CLOUD_BACKEND_URL, 5000);
-      activeBackendTier = 'cloud';
-      if (!silent) loading(false);
-      postProcessData(data);
-      return data;
-    } catch (err) {
-      console.warn('[API] Cloud Backend URL unreachable:', err.message);
+    // Tier 3: Call Cloud Backend URL (always works with full CORS support)
+    if (activeBackendTier !== 'direct') {
+      try {
+        const data = await requestEndpoint(CLOUD_BACKEND_URL, 4000);
+        activeBackendTier = 'cloud';
+        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
+          const fb = fallbackToLocal(data.error);
+          if (fb) return fb;
+        }
+        return finalizeSuccess(data);
+      } catch (err) {
+        console.warn('[API] Cloud Backend URL unreachable:', err.message);
+      }
     }
-  }
 
-  // Tier 4: Direct Client Firestore Mode (Fallback)
-  console.log('[API] Falling back to direct client Firestore...');
-  activeBackendTier = 'direct';
+    // Tier 4: Direct Client Firestore Mode (with Circuit Breaker & LocalStorage Fallback)
+    activeBackendTier = 'direct';
 
-  if (!window.runClientApi) {
-    await new Promise(r => {
-      if (window.runClientApi) return r();
-      window.addEventListener('firebase-ready', r, { once: true });
-      setTimeout(r, 2000);
+    // 서킷 브레이커가 이미 열려 있으면 대기 없이 즉시 로컬 캐시 폴백 반환
+    if (window.fcQuotaBreaker && window.fcQuotaBreaker.isOpen()) {
+      const fb = fallbackToLocal('FIRESTORE_CIRCUIT_OPEN');
+      if (fb) return fb;
+    }
+
+    if (!window.runClientApi) {
+      await new Promise(r => {
+        if (window.runClientApi) return r();
+        window.addEventListener('firebase-ready', r, { once: true });
+        setTimeout(r, 1500);
+      });
+    }
+
+    if (window.runClientApi) {
+      try {
+        const res = await Promise.race([
+          window.runClientApi(payload),
+          new Promise((_, reject) => setTimeout(() => {
+            const err = new Error('FIRESTORE_TIMEOUT: 데이터베이스 응답 시간 초과');
+            err.code = 'resource-exhausted';
+            reject(err);
+          }, 3200))
+        ]);
+        if (res && res.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(res.error)) {
+          const fb = fallbackToLocal(res.error);
+          if (fb) return fb;
+        }
+        return finalizeSuccess(res);
+      } catch (clientErr) {
+        const fb = fallbackToLocal(clientErr);
+        if (fb) return fb;
+        if (!silent) loading(false);
+        return { ok: false, error: clientErr.message || '데이터베이스 처리 오류' };
+      }
+    }
+
+    const fb = fallbackToLocal('NO_BACKEND_AVAILABLE');
+    if (fb) return fb;
+
+    if (!silent) loading(false);
+    return { 
+      ok: false, 
+      error: '서버 연결에 실패했습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.' 
+    };
+  })();
+
+  if (isRead && reqKey) {
+    inFlightReadRequests.set(reqKey, execPromise);
+    execPromise.finally(() => {
+      inFlightReadRequests.delete(reqKey);
     });
   }
 
-  if (window.runClientApi) {
-    try {
-      const res = await Promise.race([
-        window.runClientApi(payload),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('데이터베이스 응답 시간 초과 (4초)')), 4000))
-      ]);
-      if (!silent) loading(false);
-      postProcessData(res);
-      return res;
-    } catch (clientErr) {
-      if (!silent) loading(false);
-      return { ok: false, error: clientErr.message || '데이터베이스 처리 오류' };
-    }
-  }
-
-  if (!silent) loading(false);
-  return { 
-    ok: false, 
-    error: '서버 연결에 실패했습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.' 
-  };
+  return execPromise;
 }
 
 let progressBarTimer = null;
@@ -2018,11 +2862,16 @@ function setUser(user){
 }
 
 async function flushPendingSaves() {
-  if (autoSaveTimer && currentEntry) {
+  if (autoSaveTimer) {
     clearTimeout(autoSaveTimer);
     autoSaveTimer = null;
+  }
+  if (currentEntry && isEntryDirty && markEntryDirtyIfChanged()) {
     const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-    if(res.ok) currentEntry.entryId = res.entryId;
+    if (res && res.ok) {
+      currentEntry.entryId = res.entryId;
+      markEntryClean(currentEntry);
+    }
   }
 }
 
@@ -2238,7 +3087,10 @@ async function createEntry(){
     currentEntry.dailySuccesses[d] = cats.map(()=>0);
     currentEntry.dayStatus[d] = cats.map(()=>'normal'); 
   });
-  currentMobileTab = 0; expandedAccordionDay = null; renderJournal();
+  currentMobileTab = 0; expandedAccordionDay = null;
+  markEntryClean(currentEntry);
+  isEntryDirty = true; // 새로 생성한 일지는 첫 저장이 필요함
+  renderJournal();
 }
 
 function loadEntry(entryId){
@@ -2247,7 +3099,8 @@ function loadEntry(entryId){
     loading(false);
     if (!res.ok) { await uiAlert(res.error, '오류'); return; }
     currentEntry = res.entry; currentEntry.entryId = entryId; currentType = currentEntry.type || currentType;
-    applySafeguards(); calculateAverages(); 
+    applySafeguards(); calculateAverages();
+    markEntryClean(currentEntry); // 단순 조회 시에는 dirty=false로 설정하여 불필요한 자동 저장 방지
     const typeSel = document.getElementById('typeSelect');
     if (typeSel) typeSel.value = currentType;
     currentMobileTab = 0; expandedAccordionDay = null; renderJournal();
@@ -2380,12 +3233,14 @@ function renderJournal(){
 function updateDayStatusLocal(el) {
   const d = el.dataset.day;
   const ci = parseInt(el.dataset.ci);
+  if (currentEntry.dayStatus[d][ci] === el.value) return;
   currentEntry.dayStatus[d][ci] = el.value;
   if (el.value === 'gym' || el.value === 'rest' || el.value === 'injury') {
     if (currentEntry.dailyAttempts && currentEntry.dailyAttempts[d]) currentEntry.dailyAttempts[d][ci] = 0;
     if (currentEntry.dailySuccesses && currentEntry.dailySuccesses[d]) currentEntry.dailySuccesses[d][ci] = 0;
   }
   calculateAverages();
+  isEntryDirty = true;
   renderJournal(); 
   scheduleAutoSave();
 }
@@ -2395,18 +3250,49 @@ function updateDailyStatLocal(el, type) {
   const ci = parseInt(el.dataset.ci);
   const val = parseInt(el.value) || 0;
   
+  const prev = type === 'att' ? currentEntry.dailyAttempts[day][ci] : currentEntry.dailySuccesses[day][ci];
+  if (prev === val) return;
+
   if (type === 'att') currentEntry.dailyAttempts[day][ci] = val;
   else currentEntry.dailySuccesses[day][ci] = val;
   
   calculateAverages();
+  isEntryDirty = true;
   drawPies(JOURNAL_TYPES[currentEntry.type].categories); 
 }
 
-function updateGoalLocal(el){ currentEntry.goals[el.dataset.day][parseInt(el.dataset.ci)] = el.value; calculateAverages(); scheduleAutoSave(); }
-function updatePlayerQuestionLocal(el){ currentEntry.playerQuestions[parseInt(el.dataset.ci)] = el.value; }
-function updateVideoLocal(el){ currentEntry.videos[parseInt(el.dataset.ci)] = { url: el.value }; }
-function updatePlayerCommentLocal(el){ currentEntry.playerComment = el.value; }
-function updateCoachFeedbackLocal(el){ currentEntry.coachFeedback = el.value; }
+function updateGoalLocal(el){
+  const day = el.dataset.day;
+  const ci = parseInt(el.dataset.ci);
+  if (currentEntry.goals[day][ci] === el.value) return;
+  currentEntry.goals[day][ci] = el.value;
+  calculateAverages();
+  isEntryDirty = true;
+  scheduleAutoSave();
+}
+function updatePlayerQuestionLocal(el){
+  const ci = parseInt(el.dataset.ci);
+  if (currentEntry.playerQuestions[ci] === el.value) return;
+  currentEntry.playerQuestions[ci] = el.value;
+  isEntryDirty = true;
+}
+function updateVideoLocal(el){
+  const ci = parseInt(el.dataset.ci);
+  const prevUrl = (currentEntry.videos[ci] && currentEntry.videos[ci].url) || '';
+  if (prevUrl === el.value) return;
+  currentEntry.videos[ci] = { url: el.value };
+  isEntryDirty = true;
+}
+function updatePlayerCommentLocal(el){
+  if (currentEntry.playerComment === el.value) return;
+  currentEntry.playerComment = el.value;
+  isEntryDirty = true;
+}
+function updateCoachFeedbackLocal(el){
+  if (currentEntry.coachFeedback === el.value) return;
+  currentEntry.coachFeedback = el.value;
+  isEntryDirty = true;
+}
 
 async function uploadVideo(el){
   const file = el.files[0]; if (!file) return;
@@ -2417,7 +3303,13 @@ async function uploadVideo(el){
     loading(true, '대용량 영상/파일을 업로드하는 중입니다.<br>창을 닫지 마세요...');
     const res = await api({ action:'uploadFile', base64: ev.target.result, filename: file.name, mimeType: file.type }, true);
     loading(false);
-    if (res.ok) { currentEntry.videos[ci] = { url: res.viewUrl }; renderJournal(); uiToast('업로드 완료!'); }
+    if (res.ok) {
+      currentEntry.videos[ci] = { url: res.viewUrl };
+      isEntryDirty = true;
+      renderJournal();
+      scheduleAutoSave();
+      uiToast('업로드 완료!');
+    }
     else await uiAlert('업로드 실패: ' + res.error, '오류');
   };
   reader.readAsDataURL(file);
@@ -2451,20 +3343,33 @@ function drawPies(cats){
 
 async function saveEntry(){
   if (!currentEntry) return;
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = null;
   loading(true, '일지를 저장 중입니다...');
   const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
   loading(false);
-  if (res.ok) { currentEntry.entryId = res.entryId; uiToast('저장되었습니다.'); loadArchive(); }
+  if (res.ok) {
+    currentEntry.entryId = res.entryId;
+    markEntryClean(currentEntry);
+    uiToast('저장되었습니다.');
+    loadArchive();
+  }
   else await uiAlert('저장 실패: ' + res.error, '오류');
 }
 
 function scheduleAutoSave(){
-  if (!currentEntry) return;
+  // 실제 사용자가 값을 변경하지 않았으면(단순 포커스/블러/조회) 자동 저장 쓰기를 실행하지 않음
+  if (!currentEntry || !isEntryDirty || !markEntryDirtyIfChanged()) return;
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(async () => {
-    autoSaveTimer = null; 
+    autoSaveTimer = null;
+    if (!currentEntry || !isEntryDirty || !markEntryDirtyIfChanged()) return;
     const res = await api({ action:'saveEntry', entry: currentEntry, editedBy: currentUser.id }, true);
-    if (res.ok) { currentEntry.entryId = res.entryId; uiToast('자동저장되었습니다.'); }
+    if (res && res.ok) {
+      currentEntry.entryId = res.entryId;
+      markEntryClean(currentEntry);
+      uiToast('자동저장되었습니다.');
+    }
   }, 2000);
 }
 
@@ -2739,9 +3644,15 @@ async function loadCycleForDiary(diaryId, dateString, playerId) {
     
     let foundAny = false;
     for (const t of types) {
-        const res = await api({ action:'listEntries', playerId: playerId, type: t }, true);
-        if(res.ok) {
-            const entry = res.entries.find(e => e.weekStartDate === monStr);
+        let entriesList = null;
+        if (byTypeCache && Array.isArray(byTypeCache.entries)) {
+            entriesList = byTypeCache.entries.filter(e => e.playerId === playerId && e.type === t);
+        } else {
+            const res = await api({ action:'listEntries', playerId: playerId, type: t }, true);
+            if (res && res.ok) entriesList = res.entries;
+        }
+        if (entriesList) {
+            const entry = entriesList.find(e => e.weekStartDate === monStr);
             if(entry) {
                 let searchDay = dayName;
                 if(dayName === '휴일(일)') searchDay = null; 
@@ -4243,7 +5154,14 @@ function openDashboardEntry(playerId, playerName, type, entryId) {
   }
   loadArchive();
   const entry = byTypeCache && byTypeCache.entries ? byTypeCache.entries.find(e => e.entryId === entryId) : null;
-  if (entry) { currentEntry = JSON.parse(JSON.stringify(entry)); applySafeguards(); calculateAverages(); expandedAccordionDay = null; renderJournal(); } else loadEntry(entryId);
+  if (entry) {
+    currentEntry = JSON.parse(JSON.stringify(entry));
+    applySafeguards();
+    calculateAverages();
+    markEntryClean(currentEntry); // 대시보드에서 열람 시 dirty=false 초기화
+    expandedAccordionDay = null;
+    renderJournal();
+  } else loadEntry(entryId);
 }
 
 async function openDashboardDiary(playerId, playerName, targetDate) {
