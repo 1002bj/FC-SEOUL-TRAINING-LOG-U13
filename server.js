@@ -15,7 +15,8 @@ import {
   query,
   where,
   updateDoc,
-  limit
+  limit,
+  setLogLevel
 } from 'firebase/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -24,6 +25,9 @@ const __dirname = path.dirname(__filename);
 // Read Firebase config
 const firebaseConfigRaw = fs.readFileSync(path.join(__dirname, 'firebase-applet-config.json'), 'utf-8');
 const firebaseConfig = JSON.parse(firebaseConfigRaw);
+
+// Suppress internal @firebase/firestore stderr noise when quota fallback is active
+try { setLogLevel('silent'); } catch (e) {}
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
@@ -160,51 +164,90 @@ function persistServerCacheToDisk() {
 
 let gasSeedPromise = null;
 async function ensureServerCacheSeeded() {
-  if (Object.keys(serverCache.users).length > 0 || serverCache.gasSeeded) return;
+  const hasUsers = Object.keys(serverCache.users).length > 0;
+  const hasDiaries = Object.keys(serverCache.diaries).length > 0;
+  if (hasUsers && hasDiaries && serverCache.gasSeeded) return;
   if (gasSeedPromise) return gasSeedPromise;
   gasSeedPromise = (async () => {
     try {
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 5000);
-      const gasRes = await fetch(GAS_WEBAPP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' }),
-        signal: controller.signal
-      });
-      clearTimeout(tid);
-      const gasData = await gasRes.json();
-      if (gasData && gasData.ok) {
-        if (Array.isArray(gasData.users)) {
-          gasData.users.forEach(u => {
-            if (u && u.id) {
-              serverCache.users[String(u.id)] = {
-                id: String(u.id),
-                pw: u.pw || '',
-                name: u.name || String(u.id),
-                role: u.role || 'player',
-                photo: u.photo || '',
-                granted: u.granted !== false,
-                isAdmin: u.isAdmin === true,
-                isSynced: !!u.pw
-              };
-            }
-          });
+      if (!hasUsers || Object.keys(serverCache.entries).length === 0) {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 6000);
+        const gasRes = await fetch(GAS_WEBAPP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' }),
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        const gasData = await gasRes.json();
+        if (gasData && gasData.ok) {
+          if (Array.isArray(gasData.users)) {
+            gasData.users.forEach(u => {
+              if (u && u.id) {
+                serverCache.users[String(u.id)] = {
+                  id: String(u.id),
+                  pw: u.pw || '',
+                  name: u.name || String(u.id),
+                  role: u.role || 'player',
+                  photo: u.photo || '',
+                  granted: u.granted !== false,
+                  isAdmin: u.isAdmin === true,
+                  isSynced: !!u.pw
+                };
+              }
+            });
+          }
+          if (Array.isArray(gasData.entries)) {
+            gasData.entries.forEach(e => {
+              if (e) {
+                const eid = e.entryId || `entry_${e.playerId}_${e.type}_${formatDateKST(e.weekStartDate)}`;
+                e.entryId = eid;
+                if (e.weekStartDate) e.weekStartDate = formatDateKST(e.weekStartDate);
+                serverCache.entries[eid] = e;
+              }
+            });
+          }
         }
-        if (Array.isArray(gasData.entries)) {
-          gasData.entries.forEach(e => {
-            if (e) {
-              const eid = e.entryId || `entry_${e.playerId}_${e.type}_${formatDateKST(e.weekStartDate)}`;
-              e.entryId = eid;
-              if (e.weekStartDate) e.weekStartDate = formatDateKST(e.weekStartDate);
-              serverCache.entries[eid] = e;
-            }
-          });
-        }
-        serverCache.gasSeeded = true;
-        persistServerCacheToDisk();
-        console.log('[ServerCache] Seeded fallback cache from Google Sheets.');
       }
+
+      // 포토 일지(diaries)도 함께 병렬로 시딩하여 대시보드 및 일지 화면에서 즉시 복구되도록 보장
+      if (Object.keys(serverCache.diaries).length === 0 && Object.keys(serverCache.users).length > 0) {
+        const players = Object.values(serverCache.users).filter(u => u && u.role === 'player');
+        await Promise.all(players.map(async (u) => {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 5000);
+            const dRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'listDiary', playerId: String(u.id) }),
+              signal: ctrl.signal
+            });
+            clearTimeout(t);
+            const dData = await dRes.json();
+            if (dData && dData.ok && Array.isArray(dData.diary)) {
+              dData.diary.forEach((d, idx) => {
+                if (d) {
+                  const cleanDate = formatDateKST(d.date);
+                  const diaryId = d.diaryId || `diary_${u.id}_${cleanDate}_${idx}`;
+                  serverCache.diaries[diaryId] = {
+                    ...d,
+                    diaryId,
+                    playerId: String(u.id),
+                    playerName: d.playerName || u.name || String(u.id),
+                    date: cleanDate
+                  };
+                }
+              });
+            }
+          } catch (de) {}
+        }));
+      }
+
+      serverCache.gasSeeded = true;
+      persistServerCacheToDisk();
+      console.log(`[ServerCache] Seeded fallback cache (users: ${Object.keys(serverCache.users).length}, entries: ${Object.keys(serverCache.entries).length}, diaries: ${Object.keys(serverCache.diaries).length}).`);
     } catch (e) {
       console.warn('[ServerCache] GAS seed skipped:', e.message);
     } finally {
@@ -350,10 +393,11 @@ app.use(express.static(__dirname, {
   }
 }));
 
-// Verify Firestore database connection on startup
+// Verify Firestore database connection & pre-warm cache on startup
 async function initDatabase() {
   try {
     console.log('[Firebase] Connected successfully to Firestore database:', firebaseConfig.firestoreDatabaseId);
+    await ensureServerCacheSeeded();
   } catch (err) {
     console.warn('[Firebase] Database connection notice:', err.message);
   }
@@ -1004,9 +1048,44 @@ async function handleApiRequest(req, res) {
           }
         }
 
-        const diary = Object.values(serverCache.diaries)
+        if (Object.keys(serverCache.diaries).length === 0) {
+          await ensureServerCacheSeeded();
+        }
+        let diary = Object.values(serverCache.diaries)
           .filter(d => d && d.playerId === playerId)
           .map(d => ({ ...d, date: d.date ? formatDateKST(d.date) : '' }));
+
+        if (diary.length === 0 && playerId) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4500);
+            const dRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'listDiary', playerId: String(playerId) }),
+              signal: ctrl.signal
+            });
+            clearTimeout(t);
+            const dData = await dRes.json();
+            if (dData && dData.ok && Array.isArray(dData.diary)) {
+              dData.diary.forEach((d, idx) => {
+                if (d) {
+                  const cleanDate = formatDateKST(d.date);
+                  const diaryId = d.diaryId || `diary_${playerId}_${cleanDate}_${idx}`;
+                  const item = {
+                    ...d,
+                    diaryId,
+                    playerId: String(playerId),
+                    date: cleanDate
+                  };
+                  serverCache.diaries[diaryId] = item;
+                  diary.push(item);
+                }
+              });
+              persistServerCacheToDisk();
+            }
+          } catch (e) {}
+        }
         return res.json({ ok: true, diary, _fromCache: true });
       }
 
@@ -1208,7 +1287,7 @@ async function handleApiRequest(req, res) {
           }
         }
 
-        if (Object.keys(serverCache.users).length === 0) {
+        if (Object.keys(serverCache.users).length === 0 || Object.keys(serverCache.diaries).length === 0) {
           await ensureServerCacheSeeded();
         }
 

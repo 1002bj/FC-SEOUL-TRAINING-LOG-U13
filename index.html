@@ -664,22 +664,6 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
     </div>
   </div>
 
-  <div id="updateBanner" style="display:none; background:#f0f9ff; border-bottom:1px solid #bae6fd; padding:10px 16px; font-size:13px; box-shadow:0 1px 2px rgba(0,0,0,0.03); flex-shrink:0;">
-    <div style="max-width:1200px; margin:0 auto; display:flex; flex-direction:row; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:260px;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
-          <span style="background:#0284c7; color:#ffffff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:9999px; letter-spacing:0.3px;">업데이트 안내</span>
-          <span id="updateBannerDate" style="font-weight:bold; color:#0c4a6e; font-size:12.5px;"></span>
-          <span id="updateBannerVersion" style="font-size:11px; color:#0284c7; font-weight:600; background:#e0f2fe; padding:1px 6px; border-radius:4px;"></span>
-        </div>
-        <ul id="updateBannerList" style="color:#0369a1; font-size:12px; margin:0; padding-left:18px; line-height:1.6;"></ul>
-      </div>
-      <button onclick="hideUpdateBanner()" style="font-size:11px; color:#0369a1; background:#ffffff; border:1px solid #bae6fd; padding:5px 12px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.03); white-space:nowrap; transition:all 0.15s ease; margin-top:2px;" onmouseover="this.style.background='#e0f2fe'; this.style.color='#0c4a6e';" onmouseout="this.style.background='#ffffff'; this.style.color='#0369a1';">
-        ✕ 7일간 안보기
-      </button>
-    </div>
-  </div>
-
   <div class="layout">
     <div class="sidebar" id="sidebar"></div>
     <div class="main" id="mainArea">
@@ -696,6 +680,22 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
         <div id="bugReportsCard" class="card" style="border-top:10px solid #ea580c; max-width:960px; margin:0 auto; background:white; padding:28px 32px; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,0.06);"></div>
       </div>
       <div id="emptyMsg" class="empty">왼쪽에서 메뉴를 선택해보세요.</div>
+    </div>
+  </div>
+
+  <div id="updateBanner" style="display:none; background:#f0f9ff; border-top:1px solid #bae6fd; padding:10px 16px; font-size:13px; box-shadow:0 -1px 4px rgba(0,0,0,0.05); flex-shrink:0;">
+    <div style="max-width:1200px; margin:0 auto; display:flex; flex-direction:row; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:260px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+          <span style="background:#0284c7; color:#ffffff; font-size:10px; font-weight:bold; padding:2px 8px; border-radius:9999px; letter-spacing:0.3px;">업데이트 안내</span>
+          <span id="updateBannerDate" style="font-weight:bold; color:#0c4a6e; font-size:12.5px;"></span>
+          <span id="updateBannerVersion" style="font-size:11px; color:#0284c7; font-weight:600; background:#e0f2fe; padding:1px 6px; border-radius:4px;"></span>
+        </div>
+        <ul id="updateBannerList" style="color:#0369a1; font-size:12px; margin:0; padding-left:18px; line-height:1.6;"></ul>
+      </div>
+      <button onclick="hideUpdateBanner()" style="font-size:11px; color:#0369a1; background:#ffffff; border:1px solid #bae6fd; padding:5px 12px; border-radius:9999px; display:inline-flex; align-items:center; gap:4px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.03); white-space:nowrap; transition:all 0.15s ease; margin-top:2px;" onmouseover="this.style.background='#e0f2fe'; this.style.color='#0c4a6e';" onmouseout="this.style.background='#ffffff'; this.style.color='#0369a1';">
+        ✕ 7일간 안보기
+      </button>
     </div>
   </div>
 
@@ -927,7 +927,7 @@ tr.goal-row td:first-child, tr.score-row td:first-child, tr.question-row td:firs
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { 
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, 
-  collection, getDocs, query, where, limit
+  collection, getDocs, query, where, limit, setLogLevel
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -937,6 +937,8 @@ const firebaseConfig = {
   authDomain: "gen-lang-client-0262713454.firebaseapp.com",
   firestoreDatabaseId: "ai-studio-fcseoultrainingl-3ed659c0-df40-4341-a255-894c5d84c7e1"
 };
+
+try { setLogLevel('silent'); } catch (e) {}
 
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId || '(default)');
@@ -969,6 +971,7 @@ function isQuotaOrTimeoutErr(err) {
 }
 
 window.isQuotaOrTimeoutErr = isQuotaOrTimeoutErr;
+window.isQuotaExceeded = isQuotaOrTimeoutErr;
 
 window.fcQuotaBreaker = {
   _state: (() => {
@@ -1086,7 +1089,20 @@ window.fcLocalStore = {
       safeWriteLS(LS_KEYS[col], this.mem[col]);
     }
   },
-  syncFromResponse(payload, res) {
+  upsertById(col, idField, item) {
+    if (!item || !this.mem[col]) return;
+    const key = item[idField];
+    if (!key) return;
+    this.mem[col][key] = { ...(this.mem[col][key] || {}), ...item };
+    this.save(col);
+  },
+  syncFromResponse(arg1, arg2, arg3) {
+    let payload = arg1;
+    let res = arg2;
+    if (typeof arg1 === 'string') {
+      payload = arg2;
+      res = arg3;
+    }
     if (!res || !res.ok) return;
     const action = payload?.action;
     try {
@@ -1100,7 +1116,7 @@ window.fcLocalStore = {
       }
       if (res.user && res.user.id) {
         this.mem.users[res.user.id] = { ...(this.mem.users[res.user.id] || {}), ...res.user };
-        if (payload.pw) {
+        if (payload && payload.pw) {
           this.mem.users[res.user.id].pw = payload.pw;
           this.mem.users[res.user.id].isSynced = true;
         }
@@ -1116,7 +1132,7 @@ window.fcLocalStore = {
         this.mem.entries[res.entry.entryId] = res.entry;
         this.save('entries');
       }
-      if (action === 'saveEntry' && payload.entry) {
+      if (action === 'saveEntry' && payload && payload.entry) {
         const eid = res.entryId || payload.entry.entryId;
         if (eid) {
           this.mem.entries[eid] = { ...payload.entry, entryId: eid };
@@ -1153,49 +1169,89 @@ window.fcLocalStore = {
     }
   },
   async ensureSeededFromGAS() {
-    if (Object.keys(this.mem.users).length > 0 || this.mem.gasSeeded) return;
+    const hasUsers = Object.keys(this.mem.users).length > 0;
+    const hasDiaries = Object.keys(this.mem.diaries).length > 0;
+    if (hasUsers && hasDiaries && this.mem.gasSeeded) return;
     this.mem.gasSeeded = true;
     try {
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 4000);
-      const gasRes = await fetch(GAS_WEBAPP_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' }),
-        signal: controller.signal
-      });
-      clearTimeout(tid);
-      const gasData = await gasRes.json();
-      if (gasData && gasData.ok) {
-        if (Array.isArray(gasData.users)) {
-          gasData.users.forEach(u => {
-            if (u && u.id) {
-              this.mem.users[String(u.id)] = {
-                id: String(u.id),
-                pw: u.pw || '',
-                name: u.name || String(u.id),
-                role: u.role || 'player',
-                photo: u.photo || '',
-                granted: u.granted !== false,
-                isAdmin: u.isAdmin === true,
-                isSynced: !!u.pw
-              };
-            }
-          });
-          this.save('users');
-        }
-        if (Array.isArray(gasData.entries)) {
-          gasData.entries.forEach(e => {
-            if (e) {
-              const eid = e.entryId || `entry_${e.playerId}_${e.type}_${e.weekStartDate}`;
-              e.entryId = eid;
-              this.mem.entries[eid] = e;
-            }
-          });
-          this.save('entries');
+      if (!hasUsers || Object.keys(this.mem.entries).length === 0) {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 5000);
+        const gasRes = await fetch(GAS_WEBAPP_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'getAllData', requesterId: 'admin' }),
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        const gasData = await gasRes.json();
+        if (gasData && gasData.ok) {
+          if (Array.isArray(gasData.users)) {
+            gasData.users.forEach(u => {
+              if (u && u.id) {
+                this.mem.users[String(u.id)] = {
+                  id: String(u.id),
+                  pw: u.pw || '',
+                  name: u.name || String(u.id),
+                  role: u.role || 'player',
+                  photo: u.photo || '',
+                  granted: u.granted !== false,
+                  isAdmin: u.isAdmin === true,
+                  isSynced: !!u.pw
+                };
+              }
+            });
+            this.save('users');
+          }
+          if (Array.isArray(gasData.entries)) {
+            gasData.entries.forEach(e => {
+              if (e) {
+                const eid = e.entryId || `entry_${e.playerId}_${e.type}_${e.weekStartDate}`;
+                e.entryId = eid;
+                this.mem.entries[eid] = e;
+              }
+            });
+            this.save('entries');
+          }
         }
       }
+      if (Object.keys(this.mem.diaries).length === 0 && Object.keys(this.mem.users).length > 0) {
+        const players = Object.values(this.mem.users).filter(u => u && u.role === 'player');
+        await Promise.all(players.map(async (u) => {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4500);
+            const dRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'listDiary', playerId: String(u.id) }),
+              signal: ctrl.signal
+            });
+            clearTimeout(t);
+            const dData = await dRes.json();
+            if (dData && dData.ok && Array.isArray(dData.diary)) {
+              dData.diary.forEach((d, idx) => {
+                if (d) {
+                  const cleanDate = typeof formatDateLocal === 'function' ? formatDateLocal(d.date) : d.date;
+                  const diaryId = d.diaryId || `diary_${u.id}_${cleanDate}_${idx}`;
+                  this.mem.diaries[diaryId] = {
+                    ...d,
+                    diaryId,
+                    playerId: String(u.id),
+                    playerName: d.playerName || u.name || String(u.id),
+                    date: cleanDate
+                  };
+                }
+              });
+            }
+          } catch (de) {}
+        }));
+        this.save('diaries');
+      }
     } catch (e) {}
+  },
+  async executeFallback(payload) {
+    return this.handle(payload);
   },
   async handle(payload) {
     const action = payload?.action;
@@ -1454,7 +1510,38 @@ window.fcLocalStore = {
 
       case 'listDiary': {
         const { playerId } = payload;
-        const diary = Object.values(this.mem.diaries).filter(d => d && d.playerId === playerId);
+        let diary = Object.values(this.mem.diaries).filter(d => d && d.playerId === playerId);
+        if (diary.length === 0 && playerId) {
+          try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 4500);
+            const dRes = await fetch(GAS_WEBAPP_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ action: 'listDiary', playerId: String(playerId) }),
+              signal: ctrl.signal
+            });
+            clearTimeout(t);
+            const dData = await dRes.json();
+            if (dData && dData.ok && Array.isArray(dData.diary)) {
+              dData.diary.forEach((d, idx) => {
+                if (d) {
+                  const cleanDate = typeof formatDateLocal === 'function' ? formatDateLocal(d.date) : d.date;
+                  const diaryId = d.diaryId || `diary_${playerId}_${cleanDate}_${idx}`;
+                  const item = {
+                    ...d,
+                    diaryId,
+                    playerId: String(playerId),
+                    date: cleanDate
+                  };
+                  this.mem.diaries[diaryId] = item;
+                  diary.push(item);
+                }
+              });
+              this.save('diaries');
+            }
+          } catch (e) {}
+        }
         return { ok: true, diary, _fromCache: true };
       }
 
@@ -2124,7 +2211,15 @@ window._systemLogs = window._systemLogs || [];
   }
   console.log = function(...args) { addLog('log', args); originalLog.apply(console, args); };
   console.warn = function(...args) { addLog('warn', args); originalWarn.apply(console, args); };
-  console.error = function(...args) { addLog('error', args); originalError.apply(console, args); };
+  console.error = function(...args) {
+    addLog('error', args);
+    const joined = args.map(a => String(a?.message || a || '')).join(' ').toLowerCase();
+    if (joined.includes('resource-exhausted') || joined.includes('quota exceeded') || joined.includes('@firebase/firestore')) {
+      originalWarn.apply(console, args);
+      return;
+    }
+    originalError.apply(console, args);
+  };
   window.addEventListener('error', function(e) {
     addLog('uncaught', [e.message, (e.filename || '') + ':' + (e.lineno || '')]);
   });
@@ -2481,6 +2576,7 @@ async function api(payload, silent){
   if (isRead && reqKey && clientReadCache.has(reqKey)) {
     const cached = clientReadCache.get(reqKey);
     if (Date.now() - cached.ts < CLIENT_READ_TTL_MS) {
+      if (!silent) loading(false);
       return JSON.parse(JSON.stringify(cached.data));
     }
     clientReadCache.delete(reqKey);
@@ -2493,172 +2589,181 @@ async function api(payload, silent){
 
   const execPromise = (async () => {
     if (!silent) loading(true);
-
-    function finalizeSuccess(data) {
-      if (!silent) loading(false);
-      postProcessData(data);
-      if (window.fcLocalStore && data && data.ok) {
-        window.fcLocalStore.syncFromResponse(action, payload, data);
-      }
-      if (isRead && reqKey && data && data.ok) {
-        clientReadCache.set(reqKey, { ts: Date.now(), data: JSON.parse(JSON.stringify(data)) });
-      }
-      if (action === 'getAllData' && data && data.ok) {
-        byTypeCache = data;
-      }
-      return data;
-    }
-
-    function fallbackToLocal(reason) {
-      if (window.fcQuotaBreaker && window.isQuotaExceeded && window.isQuotaExceeded(reason)) {
-        window.fcQuotaBreaker.trip(reason);
-      }
-      if (window.fcLocalStore) {
-        const fb = window.fcLocalStore.executeFallback(payload);
-        if (fb && fb.ok) {
-          if (!silent) loading(false);
-          postProcessData(fb);
-          return fb;
+    try {
+      function finalizeSuccess(data) {
+        postProcessData(data);
+        if (window.fcLocalStore && data && data.ok) {
+          window.fcLocalStore.syncFromResponse(payload, data);
         }
-      }
-      return null;
-    }
-
-    // Helper for fast fetch with strict timeout
-    async function requestEndpoint(baseUrl, timeoutMs = 3500) {
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        });
-
-        if (res.status === 405 || res.status === 404) {
-          throw new Error(`STATUS_${res.status}`);
+        if (isRead && reqKey && data && data.ok) {
+          clientReadCache.set(reqKey, { ts: Date.now(), data: JSON.parse(JSON.stringify(data)) });
         }
-
-        const text = await res.text();
-        if (text.includes('405 Not Allowed') || text.includes('nginx')) {
-          throw new Error('STATUS_405');
-        }
-
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          throw new Error('INVALID_JSON');
+        if (action === 'getAllData' && data && data.ok) {
+          byTypeCache = data;
         }
         return data;
-      } finally {
-        clearTimeout(tid);
       }
-    }
 
-    // Tier 1: Check if already established on Cloud Backend
-    if (activeBackendTier === 'cloud') {
-      try {
-        const data = await requestEndpoint(CLOUD_BACKEND_URL, 4500);
-        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
-          const fb = fallbackToLocal(data.error);
-          if (fb) return fb;
+      async function fallbackToLocal(reason) {
+        if (window.fcQuotaBreaker && window.isQuotaOrTimeoutErr && window.isQuotaOrTimeoutErr(reason)) {
+          window.fcQuotaBreaker.trip(reason);
         }
-        return finalizeSuccess(data);
-      } catch (e) {
-        console.warn('[API] Cloud endpoint error, checking alternatives:', e.message);
+        if (window.fcLocalStore && typeof window.fcLocalStore.handle === 'function') {
+          try {
+            const fb = await window.fcLocalStore.handle(payload);
+            if (fb && fb.ok) {
+              postProcessData(fb);
+              if (isRead && reqKey) {
+                clientReadCache.set(reqKey, { ts: Date.now(), data: JSON.parse(JSON.stringify(fb)) });
+              }
+              if (action === 'getAllData') {
+                byTypeCache = fb;
+              }
+              return fb;
+            }
+          } catch (fbErr) {
+            console.warn('[Fallback Error]', fbErr);
+          }
+        }
+        return null;
       }
-    }
 
-    // Tier 2: Check current origin /api if not on a known static host
-    const isStaticHost = window.location.hostname.includes('github.io') || 
-                         window.location.protocol === 'file:' || 
-                         window.location.hostname.endsWith('.pages.dev') ||
-                         window.location.hostname.endsWith('.netlify.app') ||
-                         window.location.hostname.endsWith('.web.app');
+      // Helper for fast fetch with strict timeout
+      async function requestEndpoint(baseUrl, timeoutMs = 4500) {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}_t=${Date.now()}`;
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
 
-    if (!isStaticHost && activeBackendTier !== 'direct') {
-      try {
-        const data = await requestEndpoint('/api', 3000);
-        activeBackendTier = 'local';
-        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
-          const fb = fallbackToLocal(data.error);
-          if (fb) return fb;
+          if (res.status === 405 || res.status === 404) {
+            throw new Error(`STATUS_${res.status}`);
+          }
+
+          const text = await res.text();
+          if (text.includes('405 Not Allowed') || text.includes('nginx')) {
+            throw new Error('STATUS_405');
+          }
+
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            throw new Error('INVALID_JSON');
+          }
+          return data;
+        } finally {
+          clearTimeout(tid);
         }
-        return finalizeSuccess(data);
-      } catch (err) {
-        console.warn('[API] Local /api bypassed:', err.message);
       }
-    }
 
-    // Tier 3: Call Cloud Backend URL (always works with full CORS support)
-    if (activeBackendTier !== 'direct') {
-      try {
-        const data = await requestEndpoint(CLOUD_BACKEND_URL, 4000);
-        activeBackendTier = 'cloud';
-        if (data && data.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(data.error)) {
-          const fb = fallbackToLocal(data.error);
-          if (fb) return fb;
+      // Tier 1: Check if already established on Cloud Backend
+      if (activeBackendTier === 'cloud') {
+        try {
+          const data = await requestEndpoint(CLOUD_BACKEND_URL, 6000);
+          if (data && data.ok === false && window.isQuotaOrTimeoutErr && window.isQuotaOrTimeoutErr(data.error)) {
+            const fb = await fallbackToLocal(data.error);
+            if (fb) return fb;
+          }
+          return finalizeSuccess(data);
+        } catch (e) {
+          console.warn('[API] Cloud endpoint error, checking alternatives:', e.message);
         }
-        return finalizeSuccess(data);
-      } catch (err) {
-        console.warn('[API] Cloud Backend URL unreachable:', err.message);
       }
-    }
 
-    // Tier 4: Direct Client Firestore Mode (with Circuit Breaker & LocalStorage Fallback)
-    activeBackendTier = 'direct';
+      // Tier 2: Check current origin /api if not on a known static host
+      const isStaticHost = window.location.hostname.includes('github.io') || 
+                           window.location.protocol === 'file:' || 
+                           window.location.hostname.endsWith('.pages.dev') ||
+                           window.location.hostname.endsWith('.netlify.app') ||
+                           window.location.hostname.endsWith('.web.app');
 
-    // 서킷 브레이커가 이미 열려 있으면 대기 없이 즉시 로컬 캐시 폴백 반환
-    if (window.fcQuotaBreaker && window.fcQuotaBreaker.isOpen()) {
-      const fb = fallbackToLocal('FIRESTORE_CIRCUIT_OPEN');
-      if (fb) return fb;
-    }
-
-    if (!window.runClientApi) {
-      await new Promise(r => {
-        if (window.runClientApi) return r();
-        window.addEventListener('firebase-ready', r, { once: true });
-        setTimeout(r, 1500);
-      });
-    }
-
-    if (window.runClientApi) {
-      try {
-        const res = await Promise.race([
-          window.runClientApi(payload),
-          new Promise((_, reject) => setTimeout(() => {
-            const err = new Error('FIRESTORE_TIMEOUT: 데이터베이스 응답 시간 초과');
-            err.code = 'resource-exhausted';
-            reject(err);
-          }, 3200))
-        ]);
-        if (res && res.ok === false && window.isQuotaExceeded && window.isQuotaExceeded(res.error)) {
-          const fb = fallbackToLocal(res.error);
-          if (fb) return fb;
+      if (!isStaticHost && activeBackendTier !== 'direct') {
+        try {
+          const data = await requestEndpoint('/api', 6500);
+          activeBackendTier = 'local';
+          if (data && data.ok === false && window.isQuotaOrTimeoutErr && window.isQuotaOrTimeoutErr(data.error)) {
+            const fb = await fallbackToLocal(data.error);
+            if (fb) return fb;
+          }
+          return finalizeSuccess(data);
+        } catch (err) {
+          console.warn('[API] Local /api bypassed:', err.message);
         }
-        return finalizeSuccess(res);
-      } catch (clientErr) {
-        const fb = fallbackToLocal(clientErr);
+      }
+
+      // Tier 3: Call Cloud Backend URL (always works with full CORS support)
+      if (activeBackendTier !== 'direct') {
+        try {
+          const data = await requestEndpoint(CLOUD_BACKEND_URL, 5000);
+          activeBackendTier = 'cloud';
+          if (data && data.ok === false && window.isQuotaOrTimeoutErr && window.isQuotaOrTimeoutErr(data.error)) {
+            const fb = await fallbackToLocal(data.error);
+            if (fb) return fb;
+          }
+          return finalizeSuccess(data);
+        } catch (err) {
+          console.warn('[API] Cloud Backend URL unreachable:', err.message);
+        }
+      }
+
+      // Tier 4: Direct Client Firestore Mode (with Circuit Breaker & LocalStorage Fallback)
+      activeBackendTier = 'direct';
+
+      // 서킷 브레이커가 이미 열려 있으면 대기 없이 즉시 로컬 캐시 폴백 반환
+      if (window.fcQuotaBreaker && window.fcQuotaBreaker.isOpen()) {
+        const fb = await fallbackToLocal('FIRESTORE_CIRCUIT_OPEN');
         if (fb) return fb;
-        if (!silent) loading(false);
-        return { ok: false, error: clientErr.message || '데이터베이스 처리 오류' };
       }
+
+      if (!window.runClientApi) {
+        await new Promise(r => {
+          if (window.runClientApi) return r();
+          window.addEventListener('firebase-ready', r, { once: true });
+          setTimeout(r, 1500);
+        });
+      }
+
+      if (window.runClientApi) {
+        try {
+          const res = await Promise.race([
+            window.runClientApi(payload),
+            new Promise((_, reject) => setTimeout(() => {
+              const err = new Error('FIRESTORE_TIMEOUT: 데이터베이스 응답 시간 초과');
+              err.code = 'resource-exhausted';
+              reject(err);
+            }, 3200))
+          ]);
+          if (res && res.ok === false && window.isQuotaOrTimeoutErr && window.isQuotaOrTimeoutErr(res.error)) {
+            const fb = await fallbackToLocal(res.error);
+            if (fb) return fb;
+          }
+          return finalizeSuccess(res);
+        } catch (clientErr) {
+          const fb = await fallbackToLocal(clientErr);
+          if (fb) return fb;
+          return { ok: false, error: clientErr.message || '데이터베이스 처리 오류' };
+        }
+      }
+
+      const fb = await fallbackToLocal('NO_BACKEND_AVAILABLE');
+      if (fb) return fb;
+
+      return { 
+        ok: false, 
+        error: '서버 연결에 실패했습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.' 
+      };
+    } finally {
+      if (!silent) loading(false);
     }
-
-    const fb = fallbackToLocal('NO_BACKEND_AVAILABLE');
-    if (fb) return fb;
-
-    if (!silent) loading(false);
-    return { 
-      ok: false, 
-      error: '서버 연결에 실패했습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.' 
-    };
   })();
 
   if (isRead && reqKey) {
@@ -2672,6 +2777,8 @@ async function api(payload, silent){
 }
 
 let progressBarTimer = null;
+let hideBarTimer = null;
+let loadingSafetyTimer = null;
 
 function loading(on, customText = ''){
   // 1. 최상단 부드러운 진행 바 (화면을 가리지 않음)
@@ -2690,13 +2797,21 @@ function loading(on, customText = ''){
     document.body.appendChild(badge);
   }
 
+  clearTimeout(progressBarTimer);
+  clearTimeout(hideBarTimer);
+  clearTimeout(loadingSafetyTimer);
+
   if (on) {
     bar.classList.add('active');
     bar.style.width = '30%';
-    clearTimeout(progressBarTimer);
     progressBarTimer = setTimeout(() => {
       if (bar.classList.contains('active')) bar.style.width = '75%';
     }, 150);
+
+    // 안전 장치: 어떤 예외 상황에서도 상단 진행 바가 멈추지 않고 자동으로 완료 처리되도록 보장
+    loadingSafetyTimer = setTimeout(() => {
+      loading(false);
+    }, 4500);
 
     if (customText && (customText.includes('저장') || customText.includes('업로드') || customText.includes('이관'))) {
       badge.innerHTML = `<i class="fa fa-circle-notch fa-spin" style="color:var(--gold);"></i> <span>${customText}</span>`;
@@ -2705,8 +2820,7 @@ function loading(on, customText = ''){
     }
   } else {
     bar.style.width = '100%';
-    clearTimeout(progressBarTimer);
-    setTimeout(() => {
+    hideBarTimer = setTimeout(() => {
       bar.classList.remove('active');
       bar.style.width = '0%';
     }, 250);
