@@ -40,6 +40,7 @@ const GAS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz_20iWlLdSBxGhu
 // 🛡️ Firestore Quota Exceeded Circuit Breaker + Timeout + Local Cache Fallback
 // ============================================================================
 const SERVER_CACHE_FILE = '/tmp/fcseoul_server_cache.json';
+const SEED_CACHE_FILE = path.join(__dirname, 'server_seed_cache.json');
 const CIRCUIT_COOLDOWN_MS = 60 * 1000; // 60 seconds cooldown when quota exceeded
 const FIRESTORE_OP_TIMEOUT_MS = 2800; // Fast 2.8s timeout to prevent infinite hang
 
@@ -123,21 +124,23 @@ const serverCache = {
 };
 
 function loadServerCacheFromDisk() {
-  try {
-    if (fs.existsSync(SERVER_CACHE_FILE)) {
-      const raw = fs.readFileSync(SERVER_CACHE_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
-        if (parsed.users) serverCache.users = parsed.users;
-        if (parsed.entries) serverCache.entries = parsed.entries;
-        if (parsed.diaries) serverCache.diaries = parsed.diaries;
-        if (parsed.matchEvaluations) serverCache.matchEvaluations = parsed.matchEvaluations;
-        if (parsed.bugReports) serverCache.bugReports = parsed.bugReports;
-        if (parsed.files) serverCache.files = parsed.files;
+  for (const filePath of [SEED_CACHE_FILE, SERVER_CACHE_FILE]) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.users) serverCache.users = { ...serverCache.users, ...parsed.users };
+          if (parsed.entries) serverCache.entries = { ...serverCache.entries, ...parsed.entries };
+          if (parsed.diaries) serverCache.diaries = { ...serverCache.diaries, ...parsed.diaries };
+          if (parsed.matchEvaluations) serverCache.matchEvaluations = { ...serverCache.matchEvaluations, ...parsed.matchEvaluations };
+          if (parsed.bugReports) serverCache.bugReports = { ...serverCache.bugReports, ...parsed.bugReports };
+          if (parsed.files) serverCache.files = { ...serverCache.files, ...parsed.files };
+        }
       }
+    } catch (e) {
+      console.warn('[ServerCache] Failed to load disk cache:', e.message);
     }
-  } catch (e) {
-    console.warn('[ServerCache] Failed to load disk cache:', e.message);
   }
 }
 loadServerCacheFromDisk();
@@ -155,7 +158,9 @@ function persistServerCacheToDisk() {
         bugReports: serverCache.bugReports,
         savedAt: new Date().toISOString()
       };
-      fs.writeFileSync(SERVER_CACHE_FILE, JSON.stringify(payload), 'utf-8');
+      const serialized = JSON.stringify(payload);
+      fs.writeFileSync(SERVER_CACHE_FILE, serialized, 'utf-8');
+      fs.writeFileSync(SEED_CACHE_FILE, serialized, 'utf-8');
     } catch (e) {
       console.warn('[ServerCache] Failed to write disk cache:', e.message);
     }
@@ -1149,13 +1154,17 @@ async function handleApiRequest(req, res) {
         return res.json({ ok: true, _fromCache: circuitBreaker.isOpen });
       }
 
-      // 17. 경기 평가 목록 조회
+      // 17. 경기 평가 목록 조회 (선수는 본인 것만, 지도자는 전체 또는 선택한 선수 조회)
       case 'listMatchEvaluations': {
-        const { playerId } = payload;
+        const { playerId, requesterId, requesterRole } = payload;
+        const reqUser = requesterId ? serverCache.users[requesterId] : null;
+        const isRequesterPlayer = requesterRole === 'player' || (reqUser && reqUser.role === 'player');
+        const effectivePlayerId = isRequesterPlayer ? (requesterId || playerId) : (playerId || '');
+
         if (!circuitBreaker.check()) {
           try {
-            const q = playerId
-              ? query(collection(db, 'matchEvaluations'), where('playerId', '==', playerId))
+            const q = effectivePlayerId
+              ? query(collection(db, 'matchEvaluations'), where('playerId', '==', effectivePlayerId))
               : query(collection(db, 'matchEvaluations'));
             const snap = await fsOp(getDocs(q));
             const matches = [];
@@ -1165,8 +1174,11 @@ async function handleApiRequest(req, res) {
                 const mid = item.matchId || item.id || d.id;
                 item.matchId = mid;
                 item.id = mid;
+                if (item.matchDate) item.matchDate = formatDateKST(item.matchDate);
                 serverCache.matchEvaluations[mid] = item;
-                matches.push(item);
+                if (!effectivePlayerId || item.playerId === effectivePlayerId) {
+                  matches.push(item);
+                }
               }
             });
             persistServerCacheToDisk();
@@ -1178,7 +1190,7 @@ async function handleApiRequest(req, res) {
         }
 
         const matches = Object.values(serverCache.matchEvaluations)
-          .filter(m => m && (!playerId || m.playerId === playerId))
+          .filter(m => m && (!effectivePlayerId || m.playerId === effectivePlayerId))
           .sort((a, b) => new Date(b.matchDate || b.createdAt || 0) - new Date(a.matchDate || a.createdAt || 0));
         return res.json({ ok: true, matches, _fromCache: true });
       }
@@ -1231,56 +1243,76 @@ async function handleApiRequest(req, res) {
       case 'getAllData': {
         const now = Date.now();
         const hasCachedUsers = Object.keys(serverCache.users).length > 0;
-        if (!circuitBreaker.check() && (!hasCachedUsers || now - serverCache.lastGetAllAt > 12000)) {
-          try {
-            const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await fsOp(
-              Promise.all([
-                getDocs(collection(db, 'users')),
-                getDocs(collection(db, 'entries')),
-                getDocs(collection(db, 'matchEvaluations')),
-                getDocs(collection(db, 'diaries'))
-              ]),
-              3200
-            );
-            const nextUsers = {};
-            usersSnap.forEach(d => {
-              const u = d.data();
-              if (u && u.id) nextUsers[u.id] = u;
-            });
-            const nextEntries = {};
-            entriesSnap.forEach(d => {
-              const item = d.data();
-              if (item && item.entryId) {
-                if (item.weekStartDate) item.weekStartDate = formatDateKST(item.weekStartDate);
-                nextEntries[item.entryId] = item;
-              }
-            });
-            const nextMatches = {};
-            matchesSnap.forEach(d => {
-              const item = d.data();
-              if (item) {
-                const mid = item.matchId || item.id || d.id;
-                item.matchId = mid;
-                item.id = mid;
-                if (item.matchDate) item.matchDate = formatDateKST(item.matchDate);
-                nextMatches[mid] = item;
-              }
-            });
-            const nextDiaries = {};
-            diariesSnap.forEach(d => {
-              const item = d.data();
-              if (item && item.diaryId) {
-                if (item.date) item.date = formatDateKST(item.date);
-                nextDiaries[item.diaryId] = item;
-              }
-            });
+        const hasCachedMatches = Object.keys(serverCache.matchEvaluations).length > 0;
+        const hasCachedDiaries = Object.keys(serverCache.diaries).length > 0;
 
-            serverCache.users = nextUsers;
-            serverCache.entries = nextEntries;
-            serverCache.matchEvaluations = nextMatches;
-            serverCache.diaries = nextDiaries;
+        if (!circuitBreaker.check() && (!hasCachedUsers || !hasCachedMatches || now - serverCache.lastGetAllAt > 60000)) {
+          try {
+            // 1순위: 구글 시트 백업에 없는 경기 평가(matchEvaluations)부터 최우선 단발 조회
+            const matchesRes = await Promise.allSettled([
+              fsOp(getDocs(collection(db, 'matchEvaluations')), 2800)
+            ]);
+            if (matchesRes[0].status === 'fulfilled') {
+              const nextMatches = { ...serverCache.matchEvaluations };
+              matchesRes[0].value.forEach(d => {
+                const item = d.data();
+                if (item) {
+                  const mid = item.matchId || item.id || d.id;
+                  item.matchId = mid;
+                  item.id = mid;
+                  if (item.matchDate) item.matchDate = formatDateKST(item.matchDate);
+                  nextMatches[mid] = item;
+                }
+              });
+              serverCache.matchEvaluations = nextMatches;
+              persistServerCacheToDisk();
+            } else if (isQuotaOrTimeoutError(matchesRes[0].reason)) {
+              throw matchesRes[0].reason;
+            }
+
+            // 2순위: users 및 entries 단발 조회 (623건에 달하는 diaries는 이미 캐시되어 있으면 불필요한 대량 읽기 생략)
+            const tasks = [
+              fsOp(getDocs(collection(db, 'users')), 2800),
+              fsOp(getDocs(collection(db, 'entries')), 2800)
+            ];
+            if (!hasCachedDiaries) {
+              tasks.push(fsOp(getDocs(collection(db, 'diaries')), 3200));
+            }
+            const [usersSettled, entriesSettled, diariesSettled] = await Promise.allSettled(tasks);
+
+            if (usersSettled && usersSettled.status === 'fulfilled') {
+              const nextUsers = { ...serverCache.users };
+              usersSettled.value.forEach(d => {
+                const u = d.data();
+                if (u && u.id) nextUsers[u.id] = u;
+              });
+              serverCache.users = nextUsers;
+              serverCache.lastListUsersAt = now;
+            }
+            if (entriesSettled && entriesSettled.status === 'fulfilled') {
+              const nextEntries = { ...serverCache.entries };
+              entriesSettled.value.forEach(d => {
+                const item = d.data();
+                if (item && item.entryId) {
+                  if (item.weekStartDate) item.weekStartDate = formatDateKST(item.weekStartDate);
+                  nextEntries[item.entryId] = item;
+                }
+              });
+              serverCache.entries = nextEntries;
+            }
+            if (diariesSettled && diariesSettled.status === 'fulfilled') {
+              const nextDiaries = { ...serverCache.diaries };
+              diariesSettled.value.forEach(d => {
+                const item = d.data();
+                if (item && item.diaryId) {
+                  if (item.date) item.date = formatDateKST(item.date);
+                  nextDiaries[item.diaryId] = item;
+                }
+              });
+              serverCache.diaries = nextDiaries;
+            }
+
             serverCache.lastGetAllAt = now;
-            serverCache.lastListUsersAt = now;
             persistServerCacheToDisk();
           } catch (e) {
             if (!isQuotaOrTimeoutError(e)) throw e;

@@ -1574,9 +1574,10 @@ window.fcLocalStore = {
       }
 
       case 'listMatchEvaluations': {
-        const { playerId } = payload;
+        const { playerId, requesterId, requesterRole } = payload;
+        const effectivePlayerId = requesterRole === 'player' ? (requesterId || playerId) : (playerId || '');
         const matches = Object.values(this.mem.matches)
-          .filter(m => m && (!playerId || m.playerId === playerId))
+          .filter(m => m && (!effectivePlayerId || m.playerId === effectivePlayerId))
           .sort((a, b) => new Date(b.matchDate || b.createdAt || 0) - new Date(a.matchDate || a.createdAt || 0));
         return { ok: true, matches, _fromCache: true };
       }
@@ -1957,11 +1958,17 @@ window.runClientApi = async function(payload) {
       }
 
       case 'listMatchEvaluations': {
-        const { playerId } = payload;
-        let q = playerId ? query(collection(db, 'matchEvaluations'), where('playerId', '==', playerId)) : collection(db, 'matchEvaluations');
+        const { playerId, requesterId, requesterRole } = payload;
+        const effectivePlayerId = requesterRole === 'player' ? (requesterId || playerId) : (playerId || '');
+        let q = effectivePlayerId ? query(collection(db, 'matchEvaluations'), where('playerId', '==', effectivePlayerId)) : collection(db, 'matchEvaluations');
         const snap = await fsClientOp(getDocs(q));
         const matches = [];
-        snap.forEach(d => matches.push(d.data()));
+        snap.forEach(d => {
+          const item = d.data();
+          if (!effectivePlayerId || item.playerId === effectivePlayerId) {
+            matches.push(item);
+          }
+        });
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
         result = { ok: true, matches };
         window.fcLocalStore.syncFromResponse(payload, result);
@@ -1991,41 +1998,60 @@ window.runClientApi = async function(payload) {
       }
 
       case 'getAllData': {
-        const [usersSnap, entriesSnap, matchesSnap, diariesSnap] = await fsClientOp(
-          Promise.all([
-            getDocs(collection(db, 'users')),
-            getDocs(collection(db, 'entries')),
-            getDocs(collection(db, 'matchEvaluations')),
-            getDocs(collection(db, 'diaries'))
-          ]),
-          3200
-        );
-        const users = [];
-        usersSnap.forEach(d => {
-          const u = d.data();
-          users.push({
-            id: u.id, name: u.name, role: u.role, photo: u.photo || '', granted: u.granted || false, isAdmin: u.isAdmin || false
-          });
-        });
-        const entries = [];
-        entriesSnap.forEach(d => {
-          const item = d.data();
-          if (item.weekStartDate) item.weekStartDate = formatDateLocal(item.weekStartDate);
-          entries.push(item);
-        });
+        const matchesSnap = await fsClientOp(getDocs(collection(db, 'matchEvaluations')), 2600);
         const matches = [];
         matchesSnap.forEach(d => {
           const item = d.data();
+          const mid = item.matchId || item.id || d.id;
+          item.matchId = mid;
+          item.id = mid;
           if (item.matchDate) item.matchDate = formatDateLocal(item.matchDate);
           matches.push(item);
         });
         matches.sort((a, b) => new Date(b.matchDate || b.createdAt) - new Date(a.matchDate || a.createdAt));
-        const diaries = [];
-        diariesSnap.forEach(d => {
-          const item = d.data();
-          if (item.date) item.date = formatDateLocal(item.date);
-          diaries.push(item);
-        });
+        window.fcLocalStore.syncFromResponse(payload, { ok: true, matches });
+
+        const hasCachedDiaries = Object.keys(window.fcLocalStore.mem.diaries || {}).length > 0;
+        const tasks = [
+          fsClientOp(getDocs(collection(db, 'users')), 2600),
+          fsClientOp(getDocs(collection(db, 'entries')), 2600)
+        ];
+        if (!hasCachedDiaries) {
+          tasks.push(fsClientOp(getDocs(collection(db, 'diaries')), 3000));
+        }
+        const [usersSettled, entriesSettled, diariesSettled] = await Promise.allSettled(tasks);
+
+        let users = Object.values(window.fcLocalStore.mem.users || {});
+        if (usersSettled && usersSettled.status === 'fulfilled') {
+          users = [];
+          usersSettled.value.forEach(d => {
+            const u = d.data();
+            users.push({
+              id: u.id, name: u.name, role: u.role, photo: u.photo || '', granted: u.granted || false, isAdmin: u.isAdmin || false
+            });
+          });
+        }
+
+        let entries = Object.values(window.fcLocalStore.mem.entries || {});
+        if (entriesSettled && entriesSettled.status === 'fulfilled') {
+          entries = [];
+          entriesSettled.value.forEach(d => {
+            const item = d.data();
+            if (item.weekStartDate) item.weekStartDate = formatDateLocal(item.weekStartDate);
+            entries.push(item);
+          });
+        }
+
+        let diaries = Object.values(window.fcLocalStore.mem.diaries || {});
+        if (diariesSettled && diariesSettled.status === 'fulfilled') {
+          diaries = [];
+          diariesSettled.value.forEach(d => {
+            const item = d.data();
+            if (item.date) item.date = formatDateLocal(item.date);
+            diaries.push(item);
+          });
+        }
+
         result = { ok: true, users, entries, matches, diaries };
         window.fcLocalStore.syncFromResponse(payload, result);
         return result;
@@ -3109,8 +3135,15 @@ async function switchMode(mode){
   if(btnDiary) btnDiary.classList.toggle('active', mode==='diary');
   currentEntry = null; 
   if (mode === 'match') {
+    if (currentUser && currentUser.role === 'coach') {
+      matchFilterPlayer = currentPlayerId ? currentPlayerId : 'all';
+    } else if (currentUser) {
+      currentPlayerId = currentUser.id;
+      currentPlayerName = currentUser.name;
+      matchFilterPlayer = currentUser.id;
+    }
     renderMatchSidebar();
-    showMatchEvaluation();
+    await showMatchEvaluation();
   } else if (mode === 'diary') {
     showEmpty();
     currentUser.role === 'player' ? renderDiaryBody() : renderCoachDiaryBody(); 
@@ -4119,22 +4152,68 @@ async function renderMatchSidebar() {
   const sb = document.getElementById('sidebarBody');
   if (!sb) return;
   
-  const isCoach = currentUser.role === 'coach';
+  const isCoach = currentUser && currentUser.role === 'coach';
   sb.innerHTML = `
     <h3 style="margin-top:0;">⚽ 경기 평가</h3>
     <button class="btn btn-red" style="margin-bottom:12px;" onclick="resetMatchForm()"><i class="fa fa-plus-circle"></i> 새 경기 평가 작성</button>
     <hr style="margin: 14px 0 10px; border:0; border-top: 1px dashed #cbd5e1;">
-    <h3 style="margin-top:0;">${isCoach && currentPlayerName ? currentPlayerName + ' ' : '내 '}경기 평가 목록</h3>
+    <h3 id="matchSidebarTitle" style="margin-top:0;">${isCoach && currentPlayerName ? currentPlayerName + ' 경기 평가 목록' : '내 경기 평가 목록'}</h3>
     <div id="matchSidebarList" style="font-size:12px; color:#94a3b8;">불러오는 중...</div>`;
-  
-  loadMatchList();
+  renderMatchSidebarList();
+}
+
+function renderMatchSidebarList() {
+  const sbList = document.getElementById('matchSidebarList');
+  const sbTitle = document.getElementById('matchSidebarTitle');
+  if (!sbList) return;
+
+  const isCoach = currentUser && currentUser.role === 'coach';
+  let sidebarMatches = [];
+
+  if (!isCoach) {
+    sidebarMatches = (matchEvaluationsCache || []).filter(m => m && m.playerId === currentUser.id);
+    if (sbTitle) sbTitle.innerText = `내 경기 평가 목록 (${sidebarMatches.length}건)`;
+  } else if (currentPlayerId) {
+    sidebarMatches = (matchEvaluationsCache || []).filter(m => m && (m.playerId === currentPlayerId || (currentPlayerName && m.playerName === currentPlayerName)));
+    if (sbTitle) sbTitle.innerText = `${currentPlayerName || '선택 선수'} 경기 평가 목록 (${sidebarMatches.length}건)`;
+  } else {
+    sidebarMatches = (matchEvaluationsCache || []).slice(0, 15);
+    if (sbTitle) sbTitle.innerText = `전체 선수 최근 경기 평가`;
+  }
+
+  if (!sidebarMatches.length) {
+    sbList.innerHTML = `<div style="font-size:11.5px; color:#94a3b8;">${isCoach && currentPlayerName ? `${esc(currentPlayerName)} 선수의 작성된 경기 평가가 없습니다.` : '작성된 경기 평가가 없습니다.'}</div>`;
+    return;
+  }
+
+  sbList.innerHTML = sidebarMatches.map(m => {
+    const mid = m.id || m.matchId;
+    const isActive = editingMatchId && editingMatchId === mid;
+    return `
+      <div class="list-item" onclick="loadMatchIntoForm('${mid}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-radius:6px; margin-bottom:4px; border-left:3px solid ${isActive ? '#E30613' : 'transparent'}; background:${isActive ? '#fff1f2' : 'transparent'};">
+        <div>
+          <div style="font-weight:bold; font-size:12px; color:#0f172a;">
+            ${isCoach && !currentPlayerId ? `<span style="color:#E30613;">[${esc(m.playerName || '-')}]</span> ` : ''}${m.matchDate} ${(m.playingTime != null && m.playingTime !== '') ? `<span style="color:#0284c7; font-weight:normal; font-size:11px;">(${m.playingTime}분)</span>` : ''}
+          </div>
+          <div style="font-size:11px; color:#64748b;">${esc(m.opponent || '경기')} (${m.firstHalfPosition || '미출전'}/${m.secondHalfPosition || '미출전'})</div>
+        </div>
+        <span style="font-size:11px; font-weight:bold; color:#E30613;">${m.successRate || '0%'}</span>
+      </div>
+    `;
+  }).join('');
 }
 
 async function showMatchEvaluations() {
   await flushPendingSaves();
   currentPlayerId = '';
   currentPlayerName = '';
-  showMatchEvaluation();
+  matchFilterPlayer = 'all';
+  sidebarMode = 'match';
+  const playerSel = document.getElementById('playerSelect');
+  if (playerSel) playerSel.value = '';
+  const detailArea = document.getElementById('playerDetailArea');
+  if (detailArea) detailArea.innerHTML = '';
+  await showMatchEvaluation();
 }
 
 async function showMatchEvaluation(matchId = null) {
@@ -4147,8 +4226,15 @@ async function showMatchEvaluation(matchId = null) {
 
   editingMatchId = matchId;
   const isCoach = currentUser.role === 'coach';
-  const targetPlayerId = currentPlayerId || currentUser.id;
-  const targetPlayerName = currentPlayerName || currentUser.name;
+  if (!isCoach) {
+    currentPlayerId = currentUser.id;
+    currentPlayerName = currentUser.name;
+    matchFilterPlayer = currentUser.id;
+  } else {
+    matchFilterPlayer = currentPlayerId ? currentPlayerId : 'all';
+  }
+  const targetPlayerId = isCoach ? (currentPlayerId || '') : currentUser.id;
+  const targetPlayerName = isCoach ? (currentPlayerName || '선수를 선택하세요') : currentUser.name;
 
   const defaultPhoto = isCoach 
     ? ((playersInfo[targetPlayerId]||{}).photo || '') 
@@ -4385,11 +4471,7 @@ async function showMatchEvaluation(matchId = null) {
   selectMatchPosition('first', selectedMatchPos.first || '미출전');
   selectMatchPosition('second', selectedMatchPos.second || '미출전');
 
-  if (matchId) {
-    loadMatchIntoForm(matchId);
-  }
-
-  loadMatchList();
+  await loadMatchList(matchId);
 }
 
 function onMatchPlayerSelectChange() {
@@ -4397,7 +4479,24 @@ function onMatchPlayerSelectChange() {
   if (!sel) return;
   const pid = sel.value;
   currentPlayerId = pid;
-  currentPlayerName = sel.options[sel.selectedIndex].text;
+  currentPlayerName = pid ? (playersInfo[pid]?.name || sel.options[sel.selectedIndex].text) : '';
+  matchFilterPlayer = pid || 'all';
+
+  // 좌측 사이드바 선수 선택 드롭다운 및 탭 동기화
+  const sidebarPlayerSel = document.getElementById('playerSelect');
+  if (sidebarPlayerSel && sidebarPlayerSel.value !== pid) {
+    sidebarPlayerSel.value = pid;
+    const area = document.getElementById('playerDetailArea');
+    if (area) {
+      if (pid) {
+        area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeMatch" class="active" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
+        renderMatchSidebar();
+      } else {
+        area.innerHTML = '';
+      }
+    }
+  }
+
   const photo = (playersInfo[pid]||{}).photo || '';
   currentMatchPlayerPhoto = photo;
   const photoImg = document.getElementById('matchPlayerPhoto');
@@ -4413,8 +4512,19 @@ function onMatchPlayerSelectChange() {
     }
   }
   const nameDisp = document.getElementById('matchPlayerDisplayName');
-  if (nameDisp) nameDisp.innerText = currentPlayerName || '';
-  loadMatchList();
+  if (nameDisp) nameDisp.innerText = currentPlayerName || '선수를 선택하세요';
+
+  renderMatchSidebarList();
+  renderMatchListArea();
+
+  if (pid) {
+    const playerMatches = (matchEvaluationsCache || []).filter(m => m && m.playerId === pid);
+    if (playerMatches.length > 0) {
+      loadMatchIntoForm(playerMatches[0].id || playerMatches[0].matchId, true);
+    } else {
+      resetMatchForm(true);
+    }
+  }
 }
 
 async function handleMatchPlayerPhoto(e) {
@@ -4463,7 +4573,7 @@ async function handleMatchPlayerPhoto(e) {
   }
 }
 
-function resetMatchForm() {
+function resetMatchForm(silentToast = false) {
   editingMatchId = null;
   selectedMatchPos = { first: '미출전', second: '미출전' };
   const dEl = document.getElementById('matchDate'); if (dEl) dEl.value = dateStr(new Date());
@@ -4489,7 +4599,10 @@ function resetMatchForm() {
   if (submitBtn) {
     submitBtn.innerHTML = '<i class="fa fa-save"></i> 경기 평가 저장 및 제출';
   }
-  uiToast('새 경기 평가 작성 양식이 준비되었습니다.');
+  renderMatchSidebarList();
+  if (!silentToast) {
+    uiToast('새 경기 평가 작성 양식이 준비되었습니다.');
+  }
 }
 
 async function submitMatchEvaluation() {
@@ -4577,7 +4690,46 @@ function onFilterMatchTopicChange(topic) {
 }
 
 function onFilterMatchPlayerChange(playerId) {
+  const isCoach = currentUser && currentUser.role === 'coach';
+  if (!isCoach) {
+    matchFilterPlayer = currentUser.id;
+    renderMatchListArea();
+    return;
+  }
   matchFilterPlayer = playerId;
+  if (playerId && playerId !== 'all') {
+    currentPlayerId = playerId;
+    currentPlayerName = (playersInfo[playerId] && playersInfo[playerId].name) ? playersInfo[playerId].name : playerId;
+    const matchPlayerSel = document.getElementById('matchPlayerSelect');
+    if (matchPlayerSel) matchPlayerSel.value = playerId;
+    const sidebarPlayerSel = document.getElementById('playerSelect');
+    if (sidebarPlayerSel && sidebarPlayerSel.value !== playerId) {
+      sidebarPlayerSel.value = playerId;
+      const area = document.getElementById('playerDetailArea');
+      if (area) {
+        area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')">📋 주기화 목록</button><button id="modeMatch" class="active" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
+        renderMatchSidebar();
+      }
+    }
+    renderMatchSidebarList();
+    const playerMatches = (matchEvaluationsCache || []).filter(m => m && m.playerId === playerId);
+    if (playerMatches.length > 0) {
+      loadMatchIntoForm(playerMatches[0].id || playerMatches[0].matchId, true);
+      return;
+    }
+  } else {
+    currentPlayerId = '';
+    currentPlayerName = '';
+    const matchPlayerSel = document.getElementById('matchPlayerSelect');
+    if (matchPlayerSel) matchPlayerSel.value = '';
+    const nameDisp = document.getElementById('matchPlayerDisplayName');
+    if (nameDisp) nameDisp.innerText = '선수를 선택하세요';
+    const sidebarPlayerSel = document.getElementById('playerSelect');
+    if (sidebarPlayerSel) sidebarPlayerSel.value = '';
+    const area = document.getElementById('playerDetailArea');
+    if (area) area.innerHTML = '';
+    renderMatchSidebarList();
+  }
   renderMatchListArea();
 }
 
@@ -4589,7 +4741,8 @@ function setMatchViewMode(mode) {
 function resetMatchFilters() {
   matchFilterCycleType = 'all';
   matchFilterTopic = 'all';
-  matchFilterPlayer = 'all';
+  const isCoach = currentUser && currentUser.role === 'coach';
+  matchFilterPlayer = isCoach ? (currentPlayerId || 'all') : currentUser.id;
   matchViewMode = 'topic';
   renderMatchListArea();
 }
@@ -4631,45 +4784,62 @@ function getTopicOptionsHtml(cycleType, currentSelected) {
   return html;
 }
 
-async function loadMatchList() {
+async function loadMatchList(initialMatchId = null) {
   const isCoach = currentUser && currentUser.role === 'coach';
   const targetPlayerId = isCoach ? '' : currentUser.id;
 
-  const res = await api({ action: 'listMatchEvaluations', playerId: targetPlayerId });
+  const res = await api({
+    action: 'listMatchEvaluations',
+    playerId: targetPlayerId,
+    requesterId: currentUser ? currentUser.id : '',
+    requesterRole: currentUser ? currentUser.role : 'player'
+  });
   if (!res.ok) return;
 
-  matchEvaluationsCache = res.matches || [];
-  matchEvaluationsCache.sort((a,b) => new Date(b.matchDate) - new Date(a.matchDate));
+  let rawMatches = res.matches || [];
+  if (!isCoach && currentUser) {
+    rawMatches = rawMatches.filter(m => m && m.playerId === currentUser.id);
+  }
+  matchEvaluationsCache = rawMatches;
+  matchEvaluationsCache.sort((a,b) => new Date(b.matchDate || b.createdAt || 0) - new Date(a.matchDate || a.createdAt || 0));
 
-  const sbList = document.getElementById('matchSidebarList');
-  if (sbList) {
-    if (!matchEvaluationsCache.length) {
-      sbList.innerHTML = '<div style="font-size:11.5px; color:#94a3b8;">작성된 경기 평가가 없습니다.</div>';
-    } else {
-      sbList.innerHTML = matchEvaluationsCache.slice(0, 10).map(m => `
-        <div class="list-item" onclick="loadMatchIntoForm('${m.id || m.matchId}')" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <div style="font-weight:bold; font-size:12px; color:#0f172a;">${m.matchDate} ${(m.playingTime != null && m.playingTime !== '') ? `<span style="color:#0284c7; font-weight:normal; font-size:11px;">(${m.playingTime}분)</span>` : ''}</div>
-            <div style="font-size:11px; color:#64748b;">${m.opponent || '경기'} (${m.firstHalfPosition}/${m.secondHalfPosition})</div>
-          </div>
-          <span style="font-size:11px; font-weight:bold; color:#E30613;">${m.successRate || '0%'}</span>
-        </div>
-      `).join('');
-    }
+  if (!isCoach && currentUser) {
+    matchFilterPlayer = currentUser.id;
+  } else if (isCoach && currentPlayerId) {
+    matchFilterPlayer = currentPlayerId;
   }
 
+  renderMatchSidebarList();
   renderMatchListArea();
+
+  if (initialMatchId) {
+    loadMatchIntoForm(initialMatchId, true);
+  } else if (isCoach && currentPlayerId) {
+    const pMatches = matchEvaluationsCache.filter(m => m && m.playerId === currentPlayerId);
+    if (pMatches.length > 0) {
+      loadMatchIntoForm(pMatches[0].id || pMatches[0].matchId, true);
+    }
+  }
 }
 
 function renderMatchListArea() {
   const isCoach = currentUser && currentUser.role === 'coach';
-  const totalCount = matchEvaluationsCache.length;
-  const passCount = matchEvaluationsCache.filter(m => (m.periodTopic || '').includes('패스')).length;
-  const touchCount = matchEvaluationsCache.filter(m => (m.periodTopic || '').includes('터치')).length;
-  const dribbleCount = matchEvaluationsCache.filter(m => (m.periodTopic || '').includes('드리블')).length;
+  const roleScopedCache = isCoach
+    ? matchEvaluationsCache
+    : matchEvaluationsCache.filter(m => m && m.playerId === currentUser.id);
+
+  const activePlayerFilter = isCoach ? matchFilterPlayer : currentUser.id;
+  const playerScopedCache = (activePlayerFilter && activePlayerFilter !== 'all')
+    ? roleScopedCache.filter(m => m && m.playerId === activePlayerFilter)
+    : roleScopedCache;
+
+  const totalCount = playerScopedCache.length;
+  const passCount = playerScopedCache.filter(m => (m.periodTopic || '').includes('패스')).length;
+  const touchCount = playerScopedCache.filter(m => (m.periodTopic || '').includes('터치')).length;
+  const dribbleCount = playerScopedCache.filter(m => (m.periodTopic || '').includes('드리블')).length;
 
   // Filter evaluations
-  const filtered = matchEvaluationsCache.filter(m => {
+  const filtered = playerScopedCache.filter(m => {
     const topic = m.periodTopic || '';
     if (matchFilterCycleType !== 'all') {
       if (matchFilterCycleType === 'pass' && !topic.includes('패스')) return false;
@@ -4677,13 +4847,15 @@ function renderMatchListArea() {
       if (matchFilterCycleType === 'dribble' && !topic.includes('드리블')) return false;
     }
     if (matchFilterTopic !== 'all' && topic !== matchFilterTopic) return false;
-    if (matchFilterPlayer !== 'all' && m.playerId !== matchFilterPlayer) return false;
     return true;
   });
 
   const countEl = document.getElementById('matchListCount');
   if (countEl) {
-    countEl.innerHTML = `검색 결과 <span style="color:#E30613; font-weight:900;">${filtered.length}</span>건 <span style="font-weight:normal; color:#94a3b8;">(전체 ${totalCount}건)</span>`;
+    const scopeLabel = (!isCoach)
+      ? '내 경기 평가'
+      : (activePlayerFilter !== 'all' ? `${(playersInfo[activePlayerFilter]?.name) || currentPlayerName || activePlayerFilter} 선수` : '전체 선수');
+    countEl.innerHTML = `${esc(scopeLabel)} 검색 결과 <span style="color:#E30613; font-weight:900;">${filtered.length}</span>건 <span style="font-weight:normal; color:#94a3b8;">(총 ${totalCount}건)</span>`;
   }
 
   const controlsArea = document.getElementById('matchListControlsArea');
@@ -4745,6 +4917,16 @@ function renderMatchListArea() {
             </button>
           </div>
         </div>
+        ${isCoach && activePlayerFilter !== 'all' ? `
+          <div style="margin-top: 12px; padding: 9px 12px; background: #fff1f2; border: 1px solid #fecdd3; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="font-size: 12px; color: #9f1239; font-weight: 800;">
+              <i class="fa fa-user-check"></i> 현재 <strong>${esc((playersInfo[activePlayerFilter]?.name) || currentPlayerName || activePlayerFilter)}</strong> 선수의 경기 평가 기록만 표시 중입니다 (${totalCount}건)
+            </div>
+            <button class="btn btn-outline" style="width: auto; padding: 4px 10px; font-size: 11px; background: white; border-color: #fda4af; color: #be123c; font-weight: 800;" onclick="onFilterMatchPlayerChange('all')">
+              <i class="fa fa-users"></i> 전체 선수 경기 평가 보기
+            </button>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -4752,7 +4934,7 @@ function renderMatchListArea() {
   const mainList = document.getElementById('matchListArea');
   if (!mainList) return;
 
-  if (!matchEvaluationsCache.length) {
+  if (!roleScopedCache.length) {
     mainList.innerHTML = '<div style="text-align:center; color:#94a3b8; padding:36px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0;">제출된 경기 평가 기록이 없습니다. 상단 양식을 작성하여 제출해보세요.</div>';
     return;
   }
@@ -4986,9 +5168,15 @@ function renderMatchListArea() {
   }
 }
 
-function loadMatchIntoForm(matchId) {
+function loadMatchIntoForm(matchId, silentToast = false) {
   const m = matchEvaluationsCache.find(x => x.id === matchId || x.matchId === matchId);
   if (!m) return;
+
+  const isCoach = currentUser && currentUser.role === 'coach';
+  if (!isCoach && currentUser && m.playerId !== currentUser.id) {
+    uiAlert('본인의 경기 평가만 조회 및 수정할 수 있습니다.', '접근 제한');
+    return;
+  }
 
   editingMatchId = m.id || m.matchId;
   selectedMatchPos = {
@@ -4996,13 +5184,20 @@ function loadMatchIntoForm(matchId) {
     second: m.secondHalfPosition || '미출전'
   };
 
-  if (document.getElementById('matchPlayerSelect')) {
-    document.getElementById('matchPlayerSelect').value = m.playerId || '';
+  if (isCoach && m.playerId) {
     currentPlayerId = m.playerId;
-    currentPlayerName = m.playerName;
+    currentPlayerName = m.playerName || (playersInfo[m.playerId]?.name) || m.playerId;
+    matchFilterPlayer = m.playerId;
+    if (document.getElementById('matchPlayerSelect')) {
+      document.getElementById('matchPlayerSelect').value = m.playerId || '';
+    }
+    const sidebarPlayerSel = document.getElementById('playerSelect');
+    if (sidebarPlayerSel && sidebarPlayerSel.value !== m.playerId) {
+      sidebarPlayerSel.value = m.playerId;
+    }
   }
   if (document.getElementById('matchPlayerDisplayName')) {
-    document.getElementById('matchPlayerDisplayName').innerText = m.playerName || '';
+    document.getElementById('matchPlayerDisplayName').innerText = m.playerName || currentPlayerName || '';
   }
 
   const photo = m.playerPhoto || (playersInfo[m.playerId]||{}).photo || '';
@@ -5040,15 +5235,19 @@ function loadMatchIntoForm(matchId) {
     submitBtn.innerHTML = '<i class="fa fa-save"></i> 경기 평가 수정 저장';
   }
 
-  const card = document.getElementById('matchCard');
-  if (card) card.scrollIntoView({ behavior: 'smooth' });
+  renderMatchSidebarList();
+  renderMatchListArea();
 
-  const isCoach = currentUser && currentUser.role === 'coach';
-  if (isCoach && cfEl && (!m.coachFeedback || m.coachFeedback.trim() === '')) {
-    setTimeout(() => { cfEl.focus(); }, 350);
+  if (!silentToast) {
+    const card = document.getElementById('matchCard');
+    if (card) card.scrollIntoView({ behavior: 'smooth' });
+
+    if (isCoach && cfEl && (!m.coachFeedback || m.coachFeedback.trim() === '')) {
+      setTimeout(() => { cfEl.focus(); }, 350);
+    }
+
+    uiToast(`[${m.playerName ? m.playerName + ' - ' : ''}${m.matchDate} ${m.opponent || '경기'}] 평가를 불러왔습니다.`);
   }
-
-  uiToast(`[${m.matchDate} ${m.opponent || '경기'}] 평가를 불러왔습니다. 내용 수정 후 저장하세요.`);
 }
 
 async function deleteMatchEvaluation(matchId) {
@@ -5125,12 +5324,27 @@ async function deletePlayerAccount(targetId, name){
 async function onPlayerChange(){
   await flushPendingSaves(); 
   const sel = document.getElementById('playerSelect');
-  currentPlayerId = sel.value; currentPlayerName = sel.options[sel.selectedIndex].text;
-  currentEntry = null; showEmpty();
+  currentPlayerId = sel.value;
+  currentPlayerName = sel.value ? sel.options[sel.selectedIndex].text : '';
+  currentEntry = null;
   const area = document.getElementById('playerDetailArea');
-  if (!currentPlayerId) { area.innerHTML = ''; return; }
-  area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')" class="active">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
-  switchMode('cycle'); 
+  if (!currentPlayerId) {
+    area.innerHTML = '';
+    const isMatchOpen = document.getElementById('matchWrapper') && document.getElementById('matchWrapper').style.display === 'block';
+    if (isMatchOpen) {
+      matchFilterPlayer = 'all';
+      await showMatchEvaluation();
+    } else {
+      showEmpty();
+    }
+    return;
+  }
+  const isMatchOpen = document.getElementById('matchWrapper') && document.getElementById('matchWrapper').style.display === 'block';
+  const isDiaryOpen = document.getElementById('diaryViewWrapper') && document.getElementById('diaryViewWrapper').style.display === 'block';
+  const targetMode = (isMatchOpen || sidebarMode === 'match') ? 'match' : ((isDiaryOpen || sidebarMode === 'diary') ? 'diary' : 'cycle');
+  matchFilterPlayer = currentPlayerId;
+  area.innerHTML = `<div class="mode-toggle" style="margin-top:14px;"><button id="modeCycle" onclick="switchMode('cycle')" class="${targetMode==='cycle'?'active':''}">📋 주기화 목록</button><button id="modeMatch" onclick="switchMode('match')" class="${targetMode==='match'?'active':''}">⚽ 경기 평가</button><button id="modeDiary" onclick="switchMode('diary')" class="${targetMode==='diary'?'active':''}">📷 포토 일지</button></div><div id="sidebarBody"></div>`;
+  await switchMode(targetMode); 
 }
 
 /* ---------- 🚀 전체 대시보드 ---------- */
